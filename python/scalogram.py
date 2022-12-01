@@ -26,52 +26,45 @@ class MorletWavelet:
         self.dt = 1.0 / self.sr
 
         nyquist = self.sr / 2.0
-        self.min_scale = self.fourier_period_to_scale(1.0 / nyquist)
+        self.min_scale = self.period_to_scale(1.0 / nyquist)
 
     def y(self, t: T, s: float = 1.0) -> T:
+        x = t / s
+        y = self.a * (tr.exp(1j * self.w * x) - self.b) * tr.exp(-0.5 * (x ** 2))
+        if y.dtype != self.dtype:
+            y = y.to(self.dtype)
+        return y
+
+    def create_wavelet_from_scale(self, s: float = 1.0, normalize: bool = True) -> (T, T):
         with tr.no_grad():
-            x = t / s
-            y = self.a * (tr.exp(1j * self.w * x) - self.b) * tr.exp(-0.5 * (x ** 2))
-            if y.dtype != self.dtype:
-                y = y.to(self.dtype)
-            return y
+            assert s >= self.min_scale
+            M = int((self.n_sig * s) / self.dt)
+            t = tr.arange(-M, M + 1) * self.dt
+            wavelet = self.y(t, s)
+            if normalize:
+                wavelet = MorletWavelet.normalize_to_unit_energy(wavelet)
+            return t, wavelet
 
-    def create_wavelet(self, s: float = 1.0, normalize: bool = True) -> (T, T):
-        assert s >= self.min_scale
-        M = int((self.n_sig * s) / self.dt)
-        t = tr.arange(-M, M + 1) * self.dt
-        wavelet = self.y(t, s)
-        if normalize:
-            wavelet = MorletWavelet.normalize_to_unit_energy(wavelet)
-        return t, wavelet
-
-    def create_wavelet_from_n_points(self, n_points: float, normalize: bool = True) -> (T, T):
-        assert n_points >= 2.0
-        period = n_points * self.dt
-        s = self.fourier_period_to_scale(period)
-        assert s <= 1.0
-        return self.create_wavelet(s, normalize)
-
-    def scale_to_fourier_period(self, s: float) -> float:
+    def scale_to_period(self, s: float) -> float:
         return (4 * tr.pi * s) / (self.w + ((2.0 + (self.w ** 2)) ** 0.5))
 
     def scale_to_freq(self, s: float) -> float:
-        period = self.scale_to_fourier_period(s)
+        period = self.scale_to_period(s)
         return 1.0 / period
 
-    def fourier_period_to_scale(self, period: float) -> float:
+    def period_to_scale(self, period: float) -> float:
         return period * (self.w + ((2.0 + (self.w ** 2)) ** 0.5)) / (4 * tr.pi)
 
     def freq_to_scale(self, freq: float) -> float:
-        return self.fourier_period_to_scale(1.0 / freq)
+        return self.period_to_scale(1.0 / freq)
 
     @staticmethod
-    def fourier_period_to_w_at_s(period: float, s: float = 1.0) -> float:
+    def period_to_w_at_s(period: float, s: float = 1.0) -> float:
         return (((4 * tr.pi * s) ** 2) - (2 * (period ** 2))) / (8 * tr.pi * period * s)
 
     @staticmethod
     def freq_to_w_at_s(period: float, s: float = 1.0) -> float:
-        return MorletWavelet.fourier_period_to_w_at_s(1.0 / period, s)
+        return MorletWavelet.period_to_w_at_s(1.0 / period, s)
 
     @staticmethod
     def calc_energy(signal: T) -> float:
@@ -79,8 +72,9 @@ class MorletWavelet:
 
     @staticmethod
     def normalize_to_unit_energy(wavelet: T) -> T:
-        energy = MorletWavelet.calc_energy(wavelet)
-        return (energy ** -0.5) * wavelet
+        with tr.no_grad():
+            energy = MorletWavelet.calc_energy(wavelet)
+            return (energy ** -0.5) * wavelet
 
 
 def make_wavelet_bank(mw: MorletWavelet,
@@ -88,35 +82,34 @@ def make_wavelet_bank(mw: MorletWavelet,
                       steps_per_octave: int,
                       normalize: bool = True,
                       highest_freq: Optional[float] = None) -> (List[float], List[T]):
-    assert n_octaves >= 1
+    assert n_octaves >= 0
     assert steps_per_octave >= 0
-    n_points_all = []
-    wavelet_bank = []
-    highest_freq_factor = 1.0
-    if highest_freq is not None:
-        highest_freq_factor = 1.0 / (highest_freq * mw.dt * 2.0)
 
-    for j in range(1, n_octaves + 1):
-        n_points = highest_freq_factor * (2 ** j)
-        n_points_all.append(n_points)
-        _, y = mw.create_wavelet_from_n_points(n_points, normalize)
+    if highest_freq is None:
+        smallest_period = 2.0 * mw.dt
+    else:
+        smallest_period = 1.0 / highest_freq
+
+    periods = []
+    wavelet_bank = []
+    for j in range(n_octaves + 1):
+        curr_period = smallest_period * (2 ** j)
+        s = mw.period_to_scale(curr_period)
+        _, y = mw.create_wavelet_from_scale(s, normalize)
+        periods.append(curr_period)
         wavelet_bank.append(y)
         if j == n_octaves:
             break
 
         for q in range(1, steps_per_octave):
             exp = j + (q / steps_per_octave)
-            n_points = highest_freq_factor * (2 ** exp)
-            n_points_all.append(n_points)
-            _, y = mw.create_wavelet_from_n_points(n_points, normalize)
+            curr_period = smallest_period * (2 ** exp)
+            s = mw.period_to_scale(curr_period)
+            _, y = mw.create_wavelet_from_scale(s, normalize)
+            periods.append(curr_period)
             wavelet_bank.append(y)
 
-    freqs = []
-    for n_points in n_points_all:
-        period = n_points * mw.dt
-        freq = 1.0 / period
-        freqs.append(round(freq, 4))
-
+    freqs = [1.0 / p for p in periods]
     return freqs, wavelet_bank
 
 
@@ -142,12 +135,15 @@ def calc_scalogram(audio: T, wavelet_bank: List[T], take_modulus: bool = True) -
 def plot_scalogram(scalogram: T,
                    dt: Optional[float] = None,
                    freqs: Optional[List[float]] = None,
+                   title: str = "scalogram",
                    n_x_ticks: int = 8,
-                   n_y_ticks: int = 8) -> None:
+                   n_y_ticks: int = 8,
+                   interpolation: str = "none",
+                   cmap: str = "OrRd") -> None:
     assert scalogram.ndim == 2
     scalogram = scalogram.detach().numpy()
-    plt.imshow(scalogram, aspect="auto", interpolation="none", cmap="OrRd")
-    plt.title("scalogram")
+    plt.imshow(scalogram, aspect="auto", interpolation=interpolation, cmap=cmap)
+    plt.title(title)
 
     if dt:
         x_pos = list(range(scalogram.shape[1]))
@@ -184,7 +180,6 @@ if __name__ == "__main__":
     # exit()
 
     sr = audio_sr
-    normalize_wavelets = True
     w = MorletWavelet.freq_to_w_at_s(1.0, s=1.0)
     log.info(f"w = {w}")
     mw = MorletWavelet(w=w, sr=sr)
@@ -195,10 +190,11 @@ if __name__ == "__main__":
     # plt.show()
     # exit()
 
+    normalize_wavelets = True
     # J_1 = 9
     # Q_1 = 12
     # highest_freq = 14080
-    J_1 = 4   # No. of octaves
+    J_1 = 3   # No. of octaves
     Q_1 = 16  # Steps per octave
     highest_freq = 1760
     freqs, wavelet_bank = make_wavelet_bank(mw, J_1, Q_1, normalize_wavelets, highest_freq)
