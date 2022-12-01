@@ -113,7 +113,7 @@ def make_wavelet_bank(mw: MorletWavelet,
     return freqs, wavelet_bank
 
 
-def calc_scalogram(audio: T, wavelet_bank: List[T], take_modulus: bool = True) -> T:
+def calc_scalogram_td(audio: T, wavelet_bank: List[T], take_modulus: bool = True) -> T:
     assert audio.ndim == 3
     n_ch = audio.size(1)
     assert n_ch == 1  # Only support mono audio for now
@@ -126,6 +126,30 @@ def calc_scalogram(audio: T, wavelet_bank: List[T], take_modulus: bool = True) -
         convs.append(out)
 
     scalogram = tr.cat(convs, dim=1)
+    if take_modulus:
+        scalogram = tr.abs(scalogram)
+
+    return scalogram
+
+
+def calc_scalogram_fd(audio: T, wavelet_bank: List[T], take_modulus: bool = True) -> T:
+    assert audio.ndim == 3
+    n_ch = audio.size(1)
+    assert n_ch == 1  # Only support mono audio for now
+
+    audio_fd = tr.fft.fft(audio)
+    kernels = []
+    for wavelet in wavelet_bank:
+        kernel = wavelet.view(1, 1, -1)
+        padding_n = audio_fd.size(-1) - kernel.size(-1)
+        kernel = F.pad(kernel, (0, padding_n))
+        kernels.append(kernel)
+
+    kernels = tr.cat(kernels, dim=1)
+    kernels_fd = tr.fft.ifft(kernels)
+    out_fd = kernels_fd * audio_fd
+    scalogram = tr.fft.ifft(out_fd)
+
     if take_modulus:
         scalogram = tr.abs(scalogram)
 
@@ -201,7 +225,8 @@ if __name__ == "__main__":
     log.info(f"lowest freq = {freqs[-1]:.0f}")
     log.info(f"highest freq = {freqs[0]:.0f}")
 
-    scalogram = calc_scalogram(audio, wavelet_bank, take_modulus=True)
+    # scalogram = calc_scalogram_td(audio, wavelet_bank, take_modulus=True)
+    scalogram = calc_scalogram_fd(audio, wavelet_bank, take_modulus=True)
     log.info(f'scalogram mean = {tr.mean(scalogram)}')
     log.info(f'scalogram std = {tr.std(scalogram)}')
     log.info(f'scalogram max = {tr.max(scalogram)}')
