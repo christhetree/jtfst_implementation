@@ -5,7 +5,7 @@ from typing import Optional
 import torch as tr
 from torch import Tensor as T
 
-from scalogram import calc_scalogram
+from scalogram import calc_scalogram_td
 
 logging.basicConfig()
 log = logging.getLogger(__name__)
@@ -22,5 +22,5 @@ if __name__ == "__main__":
     n_ch = 2
     n_samples = 48000
     audio = tr.rand((batch_size, n_ch, n_samples))
-    scalogram = calc_scalogram(audio)
+    scalogram = calc_scalogram_td(audio)
     jtfst = calc_jtfst(scalogram)
