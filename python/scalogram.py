@@ -5,6 +5,7 @@ from typing import Optional, List
 import matplotlib.pyplot as plt
 import torch as tr
 import torch.nn.functional as F
+import torchaudio
 from torch import Tensor as T
 from tqdm import tqdm
 
@@ -145,7 +146,7 @@ def plot_scalogram(scalogram: T,
                    n_y_ticks: int = 8) -> None:
     assert scalogram.ndim == 2
     scalogram = scalogram.detach().numpy()
-    plt.imshow(scalogram)
+    plt.imshow(scalogram, aspect="auto", interpolation="none", cmap="OrRd")
     plt.title("scalogram")
 
     if dt:
@@ -172,23 +173,41 @@ def plot_scalogram(scalogram: T,
 
 
 if __name__ == "__main__":
-    sr = 44100
+    # audio = tr.rand((1, 1, dur))
+
+    audio_path = "../data/flute.wav"
+    audio, audio_sr = torchaudio.load(audio_path)
+    # dur = int(0.5 * audio_sr)
+    dur = int(2.2 * audio_sr)
+    audio = tr.mean(audio, dim=0)[:dur]
+    audio = audio.view(1, 1, -1)
+    # exit()
+
+    sr = audio_sr
+    normalize_wavelets = True
     w = MorletWavelet.freq_to_w_at_s(1.0, s=1.0)
     log.info(f"w = {w}")
     mw = MorletWavelet(w=w, sr=sr)
+
     # t, y = mw.create_wavelet()
     # log.info(f"energy = {MorletWavelet.calc_energy(y)}")
     # plt.plot(t, y, label="y_norm")
     # plt.show()
     # exit()
 
-    J_1 = 9
-    Q_1 = 12
-    normalize = True
-    freqs, wavelet_bank = make_wavelet_bank(mw, J_1, Q_1, normalize, highest_freq=14080)
+    # J_1 = 9
+    # Q_1 = 12
+    # highest_freq = 14080
+    J_1 = 4   # No. of octaves
+    Q_1 = 16  # Steps per octave
+    highest_freq = 1760
+    freqs, wavelet_bank = make_wavelet_bank(mw, J_1, Q_1, normalize_wavelets, highest_freq)
     log.info(f"lowest freq = {freqs[-1]:.0f}")
     log.info(f"highest freq = {freqs[0]:.0f}")
 
-    audio = tr.rand((1, 1, 400))
     scalogram = calc_scalogram(audio, wavelet_bank, take_modulus=True)
+    log.info(f'scalogram mean = {tr.mean(scalogram)}')
+    log.info(f'scalogram std = {tr.std(scalogram)}')
+    log.info(f'scalogram max = {tr.max(scalogram)}')
+    log.info(f'scalogram min = {tr.min(scalogram)}')
     plot_scalogram(scalogram[0], dt=mw.dt, freqs=freqs)
