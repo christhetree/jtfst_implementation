@@ -201,17 +201,17 @@ def plot_scalogram(scalogram: T,
 
 
 if __name__ == "__main__":
-    # audio = tr.rand((1, 1, dur))
+    # audio_path = "../data/flute.wav"
+    # audio, audio_sr = torchaudio.load(audio_path)
+    # # dur = int(0.2 * audio_sr)
+    # # audio = tr.mean(audio, dim=0)[20000:20000 + dur]
+    # dur = int(2.2 * audio_sr)
+    # audio = tr.mean(audio, dim=0)[:dur]
 
-    audio_path = "../data/flute.wav"
+    audio_path = "../data/sine_sweep.wav"
     audio, audio_sr = torchaudio.load(audio_path)
-    # dur = int(0.2 * audio_sr)
-    # audio = tr.mean(audio, dim=0)[20000:20000 + dur]
-    dur = int(2.2 * audio_sr)
-    audio = tr.mean(audio, dim=0)[:dur]
-    audio = audio.view(1, 1, -1)
-    # exit()
 
+    audio = audio.view(1, 1, -1)
     sr = audio_sr
     w = MorletWavelet.freq_to_w_at_s(1.0, s=1.0)
     log.info(f"w = {w}")
@@ -224,12 +224,13 @@ if __name__ == "__main__":
     # exit()
 
     normalize_wavelets = True
-    # J_1 = 9
-    # Q_1 = 12
+    J_1 = 10
+    Q_1 = 12
+    highest_freq = 20000
     # highest_freq = 14080
-    J_1 = 3   # No. of octaves
-    Q_1 = 16  # Steps per octave
-    highest_freq = 1760
+    # J_1 = 3   # No. of octaves
+    # Q_1 = 16  # Steps per octave
+    # highest_freq = 1760
     freqs, wavelet_bank = make_wavelet_bank(mw, J_1, Q_1, normalize_wavelets, highest_freq)
     log.info(f"lowest freq = {freqs[-1]:.0f}")
     log.info(f"highest freq = {freqs[0]:.0f}")
