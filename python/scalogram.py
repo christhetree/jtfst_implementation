@@ -77,6 +77,42 @@ class MorletWavelet:
             return (energy ** -0.5) * wavelet
 
 
+def plot_scalogram(scalogram: T,
+                   dt: Optional[float] = None,
+                   freqs: Optional[List[float]] = None,
+                   title: str = "scalogram",
+                   n_x_ticks: int = 8,
+                   n_y_ticks: int = 8,
+                   interpolation: str = "none",
+                   cmap: str = "OrRd") -> None:
+    assert scalogram.ndim == 2
+    scalogram = scalogram.detach().numpy()
+    plt.imshow(scalogram, aspect="auto", interpolation=interpolation, cmap=cmap)
+    plt.title(title)
+
+    if dt:
+        x_pos = list(range(scalogram.shape[1]))
+        x_labels = [pos * dt for pos in x_pos]
+        x_step_size = len(x_pos) // n_x_ticks
+        x_pos = x_pos[::x_step_size]
+        x_labels = x_labels[::x_step_size]
+        x_labels = [f"{_:.3f}" for _ in x_labels]
+        plt.xticks(x_pos, x_labels)
+        plt.xlabel("time (s)")
+
+    if freqs is not None:
+        assert scalogram.shape[0] == len(freqs)
+        y_pos = list(range(len(freqs)))
+        y_step_size = len(freqs) // n_y_ticks
+        y_pos = y_pos[::y_step_size]
+        y_labels = freqs[::y_step_size]
+        y_labels = [f"{_:.0f}" for _ in y_labels]
+        plt.yticks(y_pos, y_labels)
+        plt.ylabel("freq (Hz)")
+
+    plt.show()
+
+
 def make_wavelet_bank(mw: MorletWavelet,
                       n_octaves: int,
                       steps_per_octave: int,
@@ -116,7 +152,6 @@ def make_wavelet_bank(mw: MorletWavelet,
 def calc_scalogram_td(audio: T, wavelet_bank: List[T], take_modulus: bool = True) -> T:
     assert audio.ndim == 3
     n_ch = audio.size(1)
-    assert n_ch == 1  # Only support mono audio for now
 
     audio_complex = audio.to(mw.dtype)
     convs = []
@@ -135,28 +170,28 @@ def calc_scalogram_td(audio: T, wavelet_bank: List[T], take_modulus: bool = True
 def calc_scalogram_fd(audio: T, wavelet_bank: List[T], take_modulus: bool = True) -> T:
     assert audio.ndim == 3
     n_ch = audio.size(1)
-    assert n_ch == 1  # Only support mono audio for now
 
     max_wavelet_len = max([len(w) for w in wavelet_bank])
     max_padding = max_wavelet_len // 2
     # TODO(cm): check why we can get away with only padding the front
     audio = F.pad(audio, (max_padding, 0))
-    audio_fd = tr.fft.fft(audio, norm="backward")
+    audio_fd = tr.fft.fft(audio, norm="backward").unsqueeze(1)
 
     kernels = []
     for wavelet in wavelet_bank:
         left_padding = max_padding - wavelet.size(-1) // 2
         right_padding = audio_fd.size(-1) - wavelet.size(-1) - left_padding
-        kernel = wavelet.view(1, 1, -1)
+        kernel = wavelet.view(1, 1, -1).repeat(1, n_ch, 1)
         kernel = F.pad(kernel, (left_padding, right_padding))
         kernels.append(kernel)
 
-    kernels = tr.cat(kernels, dim=1)
+    kernels = tr.cat(kernels, dim=0).unsqueeze(0)
     kernels_fd = tr.fft.ifft(kernels, norm="backward")
     out_fd = kernels_fd * audio_fd
     scalogram = tr.fft.ifft(out_fd, norm="forward")
     # TODO(cm): check why removing padding from the end works empirically after IFFT
-    scalogram = scalogram[:, :, :-max_padding]
+    scalogram = scalogram[:, :, :, :-max_padding]
+    scalogram = tr.sum(scalogram, dim=2, keepdim=False)
 
     if take_modulus:
         scalogram = tr.abs(scalogram)
@@ -164,60 +199,34 @@ def calc_scalogram_fd(audio: T, wavelet_bank: List[T], take_modulus: bool = True
     return scalogram
 
 
-def plot_scalogram(scalogram: T,
-                   dt: Optional[float] = None,
-                   freqs: Optional[List[float]] = None,
-                   title: str = "scalogram",
-                   n_x_ticks: int = 8,
-                   n_y_ticks: int = 8,
-                   interpolation: str = "none",
-                   cmap: str = "OrRd") -> None:
-    assert scalogram.ndim == 2
-    scalogram = scalogram.detach().numpy()
-    plt.imshow(scalogram, aspect="auto", interpolation=interpolation, cmap=cmap)
-    plt.title(title)
-
-    if dt:
-        x_pos = list(range(scalogram.shape[1]))
-        x_labels = [pos * dt for pos in x_pos]
-        x_step_size = len(x_pos) // n_x_ticks
-        x_pos = x_pos[::x_step_size]
-        x_labels = x_labels[::x_step_size]
-        x_labels = [f"{_:.3f}" for _ in x_labels]
-        plt.xticks(x_pos, x_labels)
-        plt.xlabel("time (s)")
-
-    if freqs is not None:
-        assert scalogram.shape[0] == len(freqs)
-        y_pos = list(range(len(freqs)))
-        y_step_size = len(freqs) // n_y_ticks
-        y_pos = y_pos[::y_step_size]
-        y_labels = freqs[::y_step_size]
-        y_labels = [f"{_:.0f}" for _ in y_labels]
-        plt.yticks(y_pos, y_labels)
-        plt.ylabel("freq (Hz)")
-
-    plt.show()
-
-
 if __name__ == "__main__":
-    # audio_path = "../data/flute.wav"
-    # audio, audio_sr = torchaudio.load(audio_path)
+    n_samples = 4 * 48000
+
+    audio_path = "../data/flute.wav"
+    flute_audio, audio_sr_1 = torchaudio.load(audio_path)
+    flute_audio = flute_audio[:, :n_samples]
+    flute_audio = tr.mean(flute_audio, dim=0)
+    flute_audio = flute_audio.view(1, 1, -1)
+
     # # dur = int(0.2 * audio_sr)
     # # audio = tr.mean(audio, dim=0)[20000:20000 + dur]
     # dur = int(2.2 * audio_sr)
     # audio = tr.mean(audio, dim=0)[:dur]
 
     audio_path = "../data/sine_sweep.wav"
-    audio, audio_sr = torchaudio.load(audio_path)
+    chirp_audio, audio_sr_2 = torchaudio.load(audio_path)
+    chirp_audio = chirp_audio[:, :n_samples]
+    chirp_audio = chirp_audio.view(1, 1, -1)
+    assert audio_sr_1 == audio_sr_2
 
-    audio = audio.view(1, 1, -1)
-    sr = audio_sr
+    audio = tr.cat([flute_audio, chirp_audio], dim=0)
+
+    sr = audio_sr_1
     w = MorletWavelet.freq_to_w_at_s(1.0, s=1.0)
     log.info(f"w = {w}")
     mw = MorletWavelet(w=w, sr=sr)
 
-    # t, y = mw.create_wavelet()
+    # t, y = mw.create_wavelet_from_scale()
     # log.info(f"energy = {MorletWavelet.calc_energy(y)}")
     # plt.plot(t, y, label="y_norm")
     # plt.show()
@@ -235,6 +244,7 @@ if __name__ == "__main__":
     log.info(f"lowest freq = {freqs[-1]:.0f}")
     log.info(f"highest freq = {freqs[0]:.0f}")
 
+    log.info(f"in audio.shape = {audio.shape}")
     # scalogram = calc_scalogram_td(audio, wavelet_bank, take_modulus=True)
     scalogram = calc_scalogram_fd(audio, wavelet_bank, take_modulus=True)
     log.info(f'scalogram shape = {scalogram.shape}')
@@ -242,4 +252,5 @@ if __name__ == "__main__":
     log.info(f'scalogram std = {tr.std(scalogram)}')
     log.info(f'scalogram max = {tr.max(scalogram)}')
     log.info(f'scalogram min = {tr.min(scalogram)}')
-    plot_scalogram(scalogram[0], dt=mw.dt, freqs=freqs)
+    plot_scalogram(scalogram[0], title="flute", dt=mw.dt, freqs=freqs)
+    plot_scalogram(scalogram[1], title="chirp", dt=mw.dt, freqs=freqs)
