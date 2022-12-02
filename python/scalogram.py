@@ -137,18 +137,26 @@ def calc_scalogram_fd(audio: T, wavelet_bank: List[T], take_modulus: bool = True
     n_ch = audio.size(1)
     assert n_ch == 1  # Only support mono audio for now
 
-    audio_fd = tr.fft.fft(audio)
+    max_wavelet_len = max([len(w) for w in wavelet_bank])
+    max_padding = max_wavelet_len // 2
+    # TODO(cm): check why we can get away with only padding the front
+    audio = F.pad(audio, (max_padding, 0))
+    audio_fd = tr.fft.fft(audio, norm="backward")
+
     kernels = []
     for wavelet in wavelet_bank:
+        left_padding = max_padding - wavelet.size(-1) // 2
+        right_padding = audio_fd.size(-1) - wavelet.size(-1) - left_padding
         kernel = wavelet.view(1, 1, -1)
-        padding_n = audio_fd.size(-1) - kernel.size(-1)
-        kernel = F.pad(kernel, (0, padding_n))
+        kernel = F.pad(kernel, (left_padding, right_padding))
         kernels.append(kernel)
 
     kernels = tr.cat(kernels, dim=1)
-    kernels_fd = tr.fft.ifft(kernels)
+    kernels_fd = tr.fft.ifft(kernels, norm="backward")
     out_fd = kernels_fd * audio_fd
-    scalogram = tr.fft.ifft(out_fd)
+    scalogram = tr.fft.ifft(out_fd, norm="forward")
+    # TODO(cm): check why removing padding from the end works empirically after IFFT
+    scalogram = scalogram[:, :, :-max_padding]
 
     if take_modulus:
         scalogram = tr.abs(scalogram)
@@ -197,7 +205,8 @@ if __name__ == "__main__":
 
     audio_path = "../data/flute.wav"
     audio, audio_sr = torchaudio.load(audio_path)
-    # dur = int(0.5 * audio_sr)
+    # dur = int(0.2 * audio_sr)
+    # audio = tr.mean(audio, dim=0)[20000:20000 + dur]
     dur = int(2.2 * audio_sr)
     audio = tr.mean(audio, dim=0)[:dur]
     audio = audio.view(1, 1, -1)
@@ -227,6 +236,7 @@ if __name__ == "__main__":
 
     # scalogram = calc_scalogram_td(audio, wavelet_bank, take_modulus=True)
     scalogram = calc_scalogram_fd(audio, wavelet_bank, take_modulus=True)
+    log.info(f'scalogram shape = {scalogram.shape}')
     log.info(f'scalogram mean = {tr.mean(scalogram)}')
     log.info(f'scalogram std = {tr.std(scalogram)}')
     log.info(f'scalogram max = {tr.max(scalogram)}')
