@@ -15,10 +15,10 @@ log.setLevel(level=os.environ.get("LOGLEVEL", "INFO"))
 
 
 class MorletWavelet:
-    def __init__(self, w: float = 6.0, sr: float = 44100, n_sig: float = 4.0, dtype: tr.dtype = tr.complex64):
+    def __init__(self, w: float = 6.0, sr: float = 44100, n_sig: float = 3.0, dtype: tr.dtype = tr.complex64):
         self.w = tr.tensor(w)
         self.sr = sr
-        self.n_sig = n_sig  # Contains 99.99% of the wavelet if >= 4.0
+        self.n_sig = n_sig  # Contains >= 99.7% of the wavelet if >= 3.0
         self.dtype = dtype
 
         self.a = tr.tensor(tr.pi ** -0.25)
@@ -28,22 +28,56 @@ class MorletWavelet:
         nyquist = self.sr / 2.0
         self.min_scale = self.period_to_scale(1.0 / nyquist)
 
-    def y(self, t: T, s: float = 1.0) -> T:
+    def y_1d(self, t: T, s: float = 1.0) -> T:
+        assert t.ndim == 1
         x = t / s
         y = self.a * (tr.exp(1j * self.w * x) - self.b) * tr.exp(-0.5 * (x ** 2))
         if y.dtype != self.dtype:
             y = y.to(self.dtype)
         return y
 
-    def create_wavelet_from_scale(self, s: float = 1.0, normalize: bool = True) -> (T, T):
+    def create_1d_wavelet_from_scale(self, s: float = 1.0, normalize: bool = True) -> (T, T):
         with tr.no_grad():
             assert s >= self.min_scale
             M = int((self.n_sig * s) / self.dt)
             t = tr.arange(-M, M + 1) * self.dt
-            wavelet = self.y(t, s)
+            wavelet = self.y_1d(t, s)
             if normalize:
                 wavelet = MorletWavelet.normalize_to_unit_energy(wavelet)
             return t, wavelet
+
+    def y_2d(self, t_1: T, t_2: T, s: float = 1.0) -> T:
+        assert t_1.ndim == 1
+        assert t_2.ndim == 1
+        assert t_1.size(0) * t_2.size(0) <= 2 ** 26  # TODO(cm)
+
+        x_1 = t_1 / s
+        y = self.a * (tr.exp(1j * self.w * x_1) - self.b)
+
+        a = x_1 ** 2
+        a = a.view(-1, 1).expand(-1, t_2.size(0))
+        x_2 = t_2 / s
+        b = x_2 ** 2
+        b = b.view(1, -1).expand(t_1.size(0), -1)
+        gauss = tr.exp(-0.5 * (a + b))
+
+        y = y.view(-1, 1).expand(-1, gauss.size(1))
+        y = y * gauss
+
+        if y.dtype != self.dtype:
+            y = y.to(self.dtype)
+        return y
+
+    def create_2d_wavelet_from_scale(self, s: float = 1.0, normalize: bool = True) -> (T, T, T):
+        with tr.no_grad():
+            assert s >= self.min_scale
+            M = int((self.n_sig * s) / self.dt)
+            t_1 = tr.arange(-M, M + 1) * self.dt
+            t_2 = tr.clone(t_1)
+            wavelet = self.y_2d(t_1, t_2, s)
+            if normalize:
+                wavelet = MorletWavelet.normalize_to_unit_energy(wavelet)
+            return t_1, t_2, wavelet
 
     def scale_to_period(self, s: float) -> float:
         return (4 * tr.pi * s) / (self.w + ((2.0 + (self.w ** 2)) ** 0.5))
@@ -116,6 +150,7 @@ def plot_scalogram(scalogram: T,
 def make_wavelet_bank(mw: MorletWavelet,
                       n_octaves: int,
                       steps_per_octave: int,
+                      is_1d: bool = True,
                       normalize: bool = True,
                       highest_freq: Optional[float] = None) -> (List[float], List[T]):
     assert n_octaves >= 0
@@ -131,7 +166,10 @@ def make_wavelet_bank(mw: MorletWavelet,
     for j in range(n_octaves + 1):
         curr_period = smallest_period * (2 ** j)
         s = mw.period_to_scale(curr_period)
-        _, y = mw.create_wavelet_from_scale(s, normalize)
+        if is_1d:
+            _, y = mw.create_1d_wavelet_from_scale(s, normalize)
+        else:
+            _, _, y = mw.create_2d_wavelet_from_scale(s, normalize)
         periods.append(curr_period)
         wavelet_bank.append(y)
         if j == n_octaves:
@@ -141,7 +179,10 @@ def make_wavelet_bank(mw: MorletWavelet,
             exp = j + (q / steps_per_octave)
             curr_period = smallest_period * (2 ** exp)
             s = mw.period_to_scale(curr_period)
-            _, y = mw.create_wavelet_from_scale(s, normalize)
+            if is_1d:
+                _, y = mw.create_1d_wavelet_from_scale(s, normalize)
+            else:
+                _, _, y = mw.create_2d_wavelet_from_scale(s, normalize)
             periods.append(curr_period)
             wavelet_bank.append(y)
 
@@ -181,7 +222,7 @@ def calc_scalogram_fd(audio: T, wavelet_bank: List[T], take_modulus: bool = True
     for wavelet in wavelet_bank:
         left_padding = max_padding - wavelet.size(-1) // 2
         right_padding = audio_fd.size(-1) - wavelet.size(-1) - left_padding
-        kernel = wavelet.view(1, 1, -1).repeat(1, n_ch, 1)
+        kernel = wavelet.view(1, 1, -1).expand(-1, n_ch, -1)
         kernel = F.pad(kernel, (left_padding, right_padding))
         kernels.append(kernel)
 
@@ -200,6 +241,7 @@ def calc_scalogram_fd(audio: T, wavelet_bank: List[T], take_modulus: bool = True
 
 
 if __name__ == "__main__":
+    # n_samples = 16000
     n_samples = 4 * 48000
 
     audio_path = "../data/flute.wav"
@@ -219,12 +261,21 @@ if __name__ == "__main__":
     chirp_audio = chirp_audio.view(1, 1, -1)
     assert audio_sr_1 == audio_sr_2
 
+    # audio = chirp_audio
     audio = tr.cat([flute_audio, chirp_audio], dim=0)
+    # audio = tr.cat([tr.rand_like(flute_audio), flute_audio], dim=1)
 
     sr = audio_sr_1
     w = MorletWavelet.freq_to_w_at_s(1.0, s=1.0)
     log.info(f"w = {w}")
     mw = MorletWavelet(w=w, sr=sr)
+
+    # _, _, wavelet = mw.create_2d_wavelet_from_scale(s=0.02)
+    # print(MorletWavelet.calc_energy(wavelet))
+    # wavelet = wavelet.real.detach().numpy()
+    # plt.imshow(wavelet)
+    # plt.show()
+    # exit()
 
     # t, y = mw.create_wavelet_from_scale()
     # log.info(f"energy = {MorletWavelet.calc_energy(y)}")
@@ -232,17 +283,17 @@ if __name__ == "__main__":
     # plt.show()
     # exit()
 
-    normalize_wavelets = True
-    J_1 = 10
+    J_1 = 12
     Q_1 = 12
-    highest_freq = 20000
+    highest_freq = None
+    # highest_freq = 20000
     # highest_freq = 14080
     # J_1 = 3   # No. of octaves
     # Q_1 = 16  # Steps per octave
     # highest_freq = 1760
-    freqs, wavelet_bank = make_wavelet_bank(mw, J_1, Q_1, normalize_wavelets, highest_freq)
-    log.info(f"lowest freq = {freqs[-1]:.0f}")
-    log.info(f"highest freq = {freqs[0]:.0f}")
+    freqs, wavelet_bank = make_wavelet_bank(mw, J_1, Q_1, is_1d=True, highest_freq=highest_freq)
+    log.info(f"1 lowest freq = {freqs[-1]:.0f}")
+    log.info(f"1 highest freq = {freqs[0]:.0f}")
 
     log.info(f"in audio.shape = {audio.shape}")
     # scalogram = calc_scalogram_td(audio, wavelet_bank, take_modulus=True)
