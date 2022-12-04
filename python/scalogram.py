@@ -268,7 +268,7 @@ def calc_scalogram_fd(audio: T, wavelet_bank: List[T], take_modulus: bool = True
     max_padding = max_wavelet_len // 2
     # TODO(cm): check why we can get away with only padding the front
     audio = F.pad(audio, (max_padding, 0))
-    audio_fd = tr.fft.fft(audio, norm="backward").unsqueeze(1)
+    audio_fd = tr.fft.fft(audio).unsqueeze(1)
 
     kernels = []
     for wavelet in wavelet_bank:
@@ -280,9 +280,10 @@ def calc_scalogram_fd(audio: T, wavelet_bank: List[T], take_modulus: bool = True
         kernels.append(kernel)
 
     kernels = tr.cat(kernels, dim=0).unsqueeze(0)
-    kernels_fd = tr.fft.ifft(kernels, norm="backward")
+    kernels_fd = tr.fft.fft(kernels)
+    kernels_fd.imag *= -1  # PyTorch does cross-correlation instead of convolution
     out_fd = kernels_fd * audio_fd
-    scalogram = tr.fft.ifft(out_fd, norm="forward")
+    scalogram = tr.fft.ifft(out_fd)
     # TODO(cm): check why removing padding from the end works empirically after IFFT
     scalogram = scalogram[:, :, :, :-max_padding]
     scalogram = tr.sum(scalogram, dim=2, keepdim=False)
@@ -302,7 +303,7 @@ def calc_jtfst_td(scalogram: T, wavelet_bank: List[T], take_modulus: bool = True
     for wavelet in tqdm(wavelet_bank):
         assert wavelet.ndim == 2
         kernel = wavelet.view(1, 1, *wavelet.shape)
-        out = F.conv2d(scalogram_complex, kernel, stride=(1,), padding="same")
+        out = F.conv2d(scalogram_complex, kernel, stride=(1, 1), padding="same")
         convs.append(out)
 
     jtfst = tr.cat(convs, dim=1)
@@ -321,7 +322,7 @@ def calc_jtfst_fd(scalogram: T, wavelet_bank: List[T], take_modulus: bool = True
     max_t_padding = max_t_dim // 2
     # TODO(cm): check why we can get away with only padding the front
     scalogram = F.pad(scalogram, (max_t_padding, 0, max_f_padding, 0))
-    scalogram_fd = tr.fft.fft2(scalogram, norm="backward").unsqueeze(1)
+    scalogram_fd = tr.fft.fft2(scalogram).unsqueeze(1)
 
     kernels = []
     for wavelet in wavelet_bank:
@@ -335,9 +336,10 @@ def calc_jtfst_fd(scalogram: T, wavelet_bank: List[T], take_modulus: bool = True
         kernels.append(kernel)
 
     kernels = tr.cat(kernels, dim=1)
-    kernels_fd = tr.fft.ifft2(kernels, norm="backward")
+    kernels_fd = tr.fft.fft2(kernels)
+    kernels_fd.imag *= -1  # PyTorch does cross-correlation instead of convolution
     out_fd = kernels_fd * scalogram_fd
-    jtfst = tr.fft.ifft2(out_fd, norm="forward")
+    jtfst = tr.fft.ifft2(out_fd)
     # TODO(cm): check why removing padding from the end works empirically after IFFT
     jtfst = jtfst[:, :, :-max_f_padding, :-max_t_padding]
 
@@ -345,7 +347,6 @@ def calc_jtfst_fd(scalogram: T, wavelet_bank: List[T], take_modulus: bool = True
         jtfst = tr.abs(jtfst)
 
     return jtfst
-
 
 
 if __name__ == "__main__":
