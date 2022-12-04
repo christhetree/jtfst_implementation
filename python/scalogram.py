@@ -46,49 +46,23 @@ class MorletWavelet:
                 wavelet = MorletWavelet.normalize_to_unit_energy(wavelet)
             return t, wavelet
 
-    def y_2d(self, t_1: T, t_2: T, s: float = 1.0) -> T:
-        assert t_1.ndim == 1
-        assert t_2.ndim == 1
-        assert t_1.size(0) * t_2.size(0) <= 2 ** 26  # TODO(cm)
-
-        x_1 = t_1 / s
-        y = self.a * (tr.exp(1j * self.w * x_1) - self.b)
-
-        a = x_1 ** 2
-        a = a.view(-1, 1).expand(-1, t_2.size(0))
-        x_2 = t_2 / s
-        b = x_2 ** 2
-        b = b.view(1, -1).expand(t_1.size(0), -1)
-        gauss = tr.exp(-0.5 * (a + b))
-
-        y = y.view(-1, 1).expand(-1, gauss.size(1))
-        y = y * gauss
-
-        if y.dtype != self.dtype:
-            y = y.to(self.dtype)
-        return y
-
-    def y_2d_op(self, t_1: T, t_2: T, s_1: float = 1.0, s_2: float = 1.0) -> T:
+    def y_2d(self, t_1: T, t_2: T, s_1: float = 1.0, s_2: float = 1.0, reflect: bool = False) -> T:
         assert t_1.ndim == 1
         assert t_2.ndim == 1
         assert t_1.size(0) * t_2.size(0) <= 2 ** 26  # TODO(cm)
         y_1 = MorletWavelet.normalize_to_unit_energy(self.y_1d(t_1, s_1))
-        y_2 = MorletWavelet.normalize_to_unit_energy(self.y_1d(t_2, s_2))
+        if reflect:
+            y_2 = MorletWavelet.normalize_to_unit_energy(self.y_1d(-t_2, s_2))
+        else:
+            y_2 = MorletWavelet.normalize_to_unit_energy(self.y_1d(t_2, s_2))
         y = tr.outer(y_1, y_2)
         return y
 
-    def create_2d_wavelet_from_scale(self, s: float = 1.0, normalize: bool = True) -> (T, T, T):
-        with tr.no_grad():
-            assert s >= self.min_scale
-            M = int((self.n_sig * s) / self.dt)
-            t_1 = tr.arange(-M, M + 1) * self.dt
-            t_2 = tr.clone(t_1)
-            wavelet = self.y_2d(t_1, t_2, s)
-            if normalize:
-                wavelet = MorletWavelet.normalize_to_unit_energy(wavelet)
-            return t_1, t_2, wavelet
-
-    def create_2d_wavelet_from_scale_op(self, s_1: float = 1.0, s_2: float = 1.0, normalize: bool = True) -> (T, T, T):
+    def create_2d_wavelet_from_scale(self,
+                                     s_1: float = 1.0,
+                                     s_2: float = 1.0,
+                                     reflect: bool = False,
+                                     normalize: bool = True) -> (T, T, T):
         with tr.no_grad():
             assert s_1 >= self.min_scale
             assert s_2 >= self.min_scale
@@ -96,7 +70,7 @@ class MorletWavelet:
             t_1 = tr.arange(-M_1, M_1 + 1) * self.dt
             M_2 = int((self.n_sig * s_2) / self.dt)
             t_2 = tr.arange(-M_2, M_2 + 1) * self.dt
-            wavelet = self.y_2d_op(t_1, t_2, s_1, s_2)
+            wavelet = self.y_2d(t_1, t_2, s_1, s_2, reflect=reflect)
             if normalize:  # Should already be normalized
                 wavelet = MorletWavelet.normalize_to_unit_energy(wavelet)
             return t_1, t_2, wavelet
@@ -211,7 +185,7 @@ def make_wavelet_bank(mw: MorletWavelet,
                       steps_per_octave_2: int = 0,
                       highest_freq_1: Optional[float] = None,
                       highest_freq_2: Optional[float] = None,
-                      normalize: bool = True) -> (List[T], List[Union[Tuple[float, float], float]]):
+                      normalize: bool = True) -> (List[T], List[Union[Tuple[float, float, int], float]]):
     scales_1, freqs_1 = calc_scales_and_freqs(mw, n_octaves_1, steps_per_octave_1, highest_freq_1)
     log.info(f"freqs_1 highest = {freqs_1[0]:.0f}")
     log.info(f"freqs_1 lowest  = {freqs_1[-1]:.0f}")
@@ -229,9 +203,12 @@ def make_wavelet_bank(mw: MorletWavelet,
     if scales_2:
         for s_1, freq_1 in zip(scales_1, freqs_1):
             for s_2, freq_2 in zip(scales_2, freqs_2):
-                _, _, wavelet = mw.create_2d_wavelet_from_scale_op(s_1, s_2, normalize=normalize)
+                _, _, wavelet = mw.create_2d_wavelet_from_scale(s_1, s_2, reflect=False, normalize=normalize)
                 wavelet_bank.append(wavelet)
-                freqs.append((freq_1, freq_2))
+                freqs.append((freq_1, freq_2, 1))
+                _, _, wavelet_reflected = mw.create_2d_wavelet_from_scale(s_1, s_2, reflect=True, normalize=normalize)
+                wavelet_bank.append(wavelet_reflected)
+                freqs.append((freq_1, freq_2, -1))
     else:
         for s_1, freq_1 in zip(scales_1, freqs_1):
             _, wavelet = mw.create_1d_wavelet_from_scale(s_1, normalize=normalize)
@@ -313,17 +290,24 @@ def calc_jtfst_td(scalogram: T, wavelet_bank: List[T], take_modulus: bool = True
     return jtfst
 
 
-def calc_jtfst_fd(scalogram: T, wavelet_bank: List[T], take_modulus: bool = True) -> T:
+def calc_jtfst_fd(scalogram: T,
+                  wavelet_bank: List[T],
+                  max_f_dim: Optional[int] = None,
+                  max_t_dim: Optional[int] = None,
+                  take_modulus: bool = True) -> T:
     assert scalogram.ndim == 3
-
-    max_f_dim = max([w.size(0) for w in wavelet_bank])
-    max_t_dim = max([w.size(1) for w in wavelet_bank])
+    if max_f_dim is None:
+        max_f_dim = max([w.size(0) for w in wavelet_bank])
+    if max_t_dim is None:
+        max_t_dim = max([w.size(1) for w in wavelet_bank])
     max_f_padding = max_f_dim // 2
     max_t_padding = max_t_dim // 2
     # TODO(cm): check why we can get away with only padding the front
     scalogram = F.pad(scalogram, (max_t_padding, 0, max_f_padding, 0))
+    log.debug("scalogram fft")
     scalogram_fd = tr.fft.fft2(scalogram).unsqueeze(1)
 
+    log.debug("making kernels")
     kernels = []
     for wavelet in wavelet_bank:
         assert wavelet.ndim == 2
@@ -336,9 +320,12 @@ def calc_jtfst_fd(scalogram: T, wavelet_bank: List[T], take_modulus: bool = True
         kernels.append(kernel)
 
     kernels = tr.cat(kernels, dim=1)
+    log.debug("kernel fft")
     kernels_fd = tr.fft.fft2(kernels)
+    log.debug("matmult")
     kernels_fd.imag *= -1  # PyTorch does cross-correlation instead of convolution
     out_fd = kernels_fd * scalogram_fd
+    log.debug("jtfst ifft")
     jtfst = tr.fft.ifft2(out_fd)
     # TODO(cm): check why removing padding from the end works empirically after IFFT
     jtfst = jtfst[:, :, :-max_f_padding, :-max_t_padding]
@@ -349,7 +336,23 @@ def calc_jtfst_fd(scalogram: T, wavelet_bank: List[T], take_modulus: bool = True
     return jtfst
 
 
+def testing() -> None:
+    jtfst = tr.load("../data/tmp.pt")
+    log.info(f"jtfst.shape = {jtfst.shape}")
+
+    for idx in range(7):
+        offset = 2
+        curr_idx = offset * 7 + idx
+        slice = jtfst[0, curr_idx, :, :].detach().numpy()
+        plt.imshow(slice, aspect="auto", interpolation="none", cmap="OrRd")
+        plt.title(f"idx = {curr_idx}")
+        plt.show()
+
+
 if __name__ == "__main__":
+    # testing()
+    # exit()
+
     n_samples = 24000
     # n_samples = 4 * 48000
 
@@ -368,12 +371,17 @@ if __name__ == "__main__":
     chirp_audio, audio_sr_2 = torchaudio.load(audio_path)
     # chirp_audio = chirp_audio[:, :n_samples]
     chirp_audio = chirp_audio[:, -n_samples:-8000]
+
+    # chirp_audio = chirp_audio[:, -n_samples:]
+    # chirp_audio = chirp_audio[:, :n_samples // 2]
+    # chirp_audio = F.pad(chirp_audio, (n_samples // 2, n_samples // 2))
+
     chirp_audio = chirp_audio.view(1, 1, -1)
     assert audio_sr_1 == audio_sr_2
 
     # audio = flute_audio
     audio = chirp_audio
-    # audio = tr.cat([flute_audio, chirp_audio], dim=0)
+    # audio = tr.cat([chirp_audio, flute_audio], dim=0)
     # audio = tr.cat([tr.rand_like(flute_audio), flute_audio], dim=1)
 
     sr = audio_sr_1
@@ -381,17 +389,16 @@ if __name__ == "__main__":
     log.info(f"w = {w}")
     mw = MorletWavelet(w=w, sr=sr)
 
-    # _, _, wavelet = mw.create_2d_wavelet_from_scale(s=0.02)
-    # _, _, wavelet = mw.create_2d_wavelet_from_scale_op(s_1=0.01, s_2=0.01, normalize=False)
-    # print(MorletWavelet.calc_energy(wavelet))
-    # wavelet = wavelet.real.detach().numpy()
-    # plt.imshow(wavelet)
-    # plt.show()
-    # exit()
-
     # t, y = mw.create_1d_wavelet_from_scale(s=0.1)
     # log.info(f"energy = {MorletWavelet.calc_energy(y)}")
     # plt.plot(t, y, label="y_norm")
+    # plt.show()
+    # exit()
+
+    # _, _, wavelet = mw.create_2d_wavelet_from_scale(s_1=0.01, s_2=0.01, reflect=False, normalize=False)
+    # print(MorletWavelet.calc_energy(wavelet))
+    # wavelet = wavelet.real.detach().numpy()
+    # plt.imshow(wavelet)
     # plt.show()
     # exit()
 
@@ -413,8 +420,8 @@ if __name__ == "__main__":
     log.info(f"scalogram std = {tr.std(scalogram)}")
     log.info(f"scalogram max = {tr.max(scalogram)}")
     log.info(f"scalogram min = {tr.min(scalogram)}")
-    # plot_scalogram(scalogram[0], title="flute", dt=mw.dt, freqs=freqs)
-    # plot_scalogram(scalogram[1], title="chirp", dt=mw.dt, freqs=freqs)
+    plot_scalogram(scalogram[0], title="chirp", dt=mw.dt, freqs=freqs)
+    # plot_scalogram(scalogram[1], title="flute", dt=mw.dt, freqs=freqs)
     # exit()
 
     J_2_f = 0
@@ -426,7 +433,7 @@ if __name__ == "__main__":
     highest_freq_t = None
     # highest_freq_t = 15000
 
-    wavelet_bank_2, freqs_2 = make_wavelet_bank(mw, J_2_f, Q_2_f, J_2_t, Q_2_t, highest_freq_1=highest_freq_f, highest_freq_2=highest_freq_t)
+    wavelet_bank_2, freqs_2 = make_wavelet_bank(mw, J_2_f, Q_2_f, J_2_t, Q_2_t, highest_freq_f, highest_freq_t)
     # for wavelet in wavelet_bank_2:
     #     wavelet = wavelet.real.detach().numpy()
     #     plt.imshow(wavelet)
@@ -434,12 +441,27 @@ if __name__ == "__main__":
 
     log.info(f"in scalogram.shape = {scalogram.shape}")
     # jtfst = calc_jtfst_td(scalogram, wavelet_bank_2)
-    jtfst = calc_jtfst_fd(scalogram, wavelet_bank_2)
+    # jtfst = calc_jtfst_fd(scalogram, wavelet_bank_2)
+
+    # Low memory implementation
+    max_f_dim = max([w.size(0) for w in wavelet_bank_2])
+    max_t_dim = max([w.size(1) for w in wavelet_bank_2])
+    rows = []
+    for wavelet in tqdm(wavelet_bank_2):
+        row = calc_jtfst_fd(scalogram, [wavelet], max_f_dim=max_f_dim, max_t_dim=max_t_dim)  # Padding is different
+        rows.append(row)
+    jtfst = tr.cat(rows, dim=1)
+
     log.info(f"jtfst shape = {jtfst.shape}")
     log.info(f"jtfst mean = {tr.mean(jtfst)}")
     log.info(f"jtfst std = {tr.std(jtfst)}")
     log.info(f"jtfst max = {tr.max(jtfst)}")
     log.info(f"jtfst min = {tr.min(jtfst)}")
-    real = jtfst[0, 0, :, :].squeeze().real.detach().numpy()
-    plt.imshow(real, aspect="auto", interpolation="none", cmap="OrRd")
-    plt.show()
+
+    # for idx, (freq_f, freq_t, theta) in enumerate(freqs_2):
+    #     pic = jtfst[0, idx, :, :].squeeze().detach().numpy()
+    #     plt.imshow(pic, aspect="auto", interpolation="none", cmap="OrRd")
+    #     plt.title(f"freq_f = {freq_f:.0f}, freq_t = {freq_t:.0f}, theta = {theta}")
+    #     plt.show()
+
+    tr.save(jtfst, "../data/tmp.pt")
