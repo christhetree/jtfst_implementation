@@ -213,8 +213,13 @@ def make_wavelet_bank(mw: MorletWavelet,
                       highest_freq_2: Optional[float] = None,
                       normalize: bool = True) -> (List[T], List[Union[Tuple[float, float], float]]):
     scales_1, freqs_1 = calc_scales_and_freqs(mw, n_octaves_1, steps_per_octave_1, highest_freq_1)
+    log.info(f"freqs_1 highest = {freqs_1[0]:.0f}")
+    log.info(f"freqs_1 lowest  = {freqs_1[-1]:.0f}")
+
     if n_octaves_2 is not None:
         scales_2, freqs_2 = calc_scales_and_freqs(mw, n_octaves_2, steps_per_octave_2, highest_freq_2)
+        log.info(f"freqs_2 highest = {freqs_2[0]:.0f}")
+        log.info(f"freqs_2 lowest  = {freqs_2[-1]:.0f}")
     else:
         scales_2 = None
         freqs_2 = None
@@ -243,6 +248,7 @@ def calc_scalogram_td(audio: T, wavelet_bank: List[T], take_modulus: bool = True
     audio_complex = audio.to(mw.dtype)
     convs = []
     for wavelet in tqdm(wavelet_bank):
+        assert wavelet.ndim == 1
         kernel = wavelet.view(1, 1, -1).repeat(1, n_ch, 1)
         out = F.conv1d(audio_complex, kernel, stride=(1,), padding="same")
         convs.append(out)
@@ -266,6 +272,7 @@ def calc_scalogram_fd(audio: T, wavelet_bank: List[T], take_modulus: bool = True
 
     kernels = []
     for wavelet in wavelet_bank:
+        assert wavelet.ndim == 1
         left_padding = max_padding - wavelet.size(-1) // 2
         right_padding = audio_fd.size(-1) - wavelet.size(-1) - left_padding
         kernel = wavelet.view(1, 1, -1).expand(-1, n_ch, -1)
@@ -286,9 +293,64 @@ def calc_scalogram_fd(audio: T, wavelet_bank: List[T], take_modulus: bool = True
     return scalogram
 
 
+def calc_jtfst_td(scalogram: T, wavelet_bank: List[T], take_modulus: bool = True) -> T:
+    assert scalogram.ndim == 3
+
+    scalogram = scalogram.unsqueeze(1)  # Image with 1 channel
+    scalogram_complex = scalogram.to(mw.dtype)
+    convs = []
+    for wavelet in tqdm(wavelet_bank):
+        assert wavelet.ndim == 2
+        kernel = wavelet.view(1, 1, *wavelet.shape)
+        out = F.conv2d(scalogram_complex, kernel, stride=(1,), padding="same")
+        convs.append(out)
+
+    jtfst = tr.cat(convs, dim=1)
+    if take_modulus:
+        jtfst = tr.abs(jtfst)
+
+    return jtfst
+
+
+def calc_jtfst_fd(scalogram: T, wavelet_bank: List[T], take_modulus: bool = True) -> T:
+    assert scalogram.ndim == 3
+
+    max_f_dim = max([w.size(0) for w in wavelet_bank])
+    max_t_dim = max([w.size(1) for w in wavelet_bank])
+    max_f_padding = max_f_dim // 2
+    max_t_padding = max_t_dim // 2
+    # TODO(cm): check why we can get away with only padding the front
+    scalogram = F.pad(scalogram, (max_t_padding, 0, max_f_padding, 0))
+    scalogram_fd = tr.fft.fft2(scalogram, norm="backward").unsqueeze(1)
+
+    kernels = []
+    for wavelet in wavelet_bank:
+        assert wavelet.ndim == 2
+        top_padding = max_f_padding - wavelet.size(-2) // 2
+        bottom_padding = scalogram_fd.size(-2) - wavelet.size(-2) - top_padding
+        left_padding = max_t_padding - wavelet.size(-1) // 2
+        right_padding = scalogram_fd.size(-1) - wavelet.size(-1) - left_padding
+        kernel = wavelet.view(1, 1, *wavelet.shape)
+        kernel = F.pad(kernel, (left_padding, right_padding, top_padding, bottom_padding))
+        kernels.append(kernel)
+
+    kernels = tr.cat(kernels, dim=1)
+    kernels_fd = tr.fft.ifft2(kernels, norm="backward")
+    out_fd = kernels_fd * scalogram_fd
+    jtfst = tr.fft.ifft2(out_fd, norm="forward")
+    # TODO(cm): check why removing padding from the end works empirically after IFFT
+    jtfst = jtfst[:, :, :-max_f_padding, :-max_t_padding]
+
+    if take_modulus:
+        jtfst = tr.abs(jtfst)
+
+    return jtfst
+
+
+
 if __name__ == "__main__":
-    # n_samples = 16000
-    n_samples = 4 * 48000
+    n_samples = 24000
+    # n_samples = 4 * 48000
 
     audio_path = "../data/flute.wav"
     flute_audio, audio_sr_1 = torchaudio.load(audio_path)
@@ -303,12 +365,14 @@ if __name__ == "__main__":
 
     audio_path = "../data/sine_sweep.wav"
     chirp_audio, audio_sr_2 = torchaudio.load(audio_path)
-    chirp_audio = chirp_audio[:, :n_samples]
+    # chirp_audio = chirp_audio[:, :n_samples]
+    chirp_audio = chirp_audio[:, -n_samples:-8000]
     chirp_audio = chirp_audio.view(1, 1, -1)
     assert audio_sr_1 == audio_sr_2
 
-    # audio = chirp_audio
-    audio = tr.cat([flute_audio, chirp_audio], dim=0)
+    # audio = flute_audio
+    audio = chirp_audio
+    # audio = tr.cat([flute_audio, chirp_audio], dim=0)
     # audio = tr.cat([tr.rand_like(flute_audio), flute_audio], dim=1)
 
     sr = audio_sr_1
@@ -330,8 +394,8 @@ if __name__ == "__main__":
     # plt.show()
     # exit()
 
-    J_1 = 12
-    Q_1 = 12
+    J_1 = 2
+    Q_1 = 16
     highest_freq = None
     # highest_freq = 20000
     # highest_freq = 14080
@@ -339,27 +403,42 @@ if __name__ == "__main__":
     # Q_1 = 16  # Steps per octave
     # highest_freq = 1760
     wavelet_bank, freqs = make_wavelet_bank(mw, J_1, Q_1, highest_freq_1=highest_freq)
-    log.info(f"1 lowest freq = {freqs[-1]:.0f}")
-    log.info(f"1 highest freq = {freqs[0]:.0f}")
 
     log.info(f"in audio.shape = {audio.shape}")
     # scalogram = calc_scalogram_td(audio, wavelet_bank, take_modulus=True)
     scalogram = calc_scalogram_fd(audio, wavelet_bank, take_modulus=True)
-    log.info(f'scalogram shape = {scalogram.shape}')
-    log.info(f'scalogram mean = {tr.mean(scalogram)}')
-    log.info(f'scalogram std = {tr.std(scalogram)}')
-    log.info(f'scalogram max = {tr.max(scalogram)}')
-    log.info(f'scalogram min = {tr.min(scalogram)}')
+    log.info(f"scalogram shape = {scalogram.shape}")
+    log.info(f"scalogram mean = {tr.mean(scalogram)}")
+    log.info(f"scalogram std = {tr.std(scalogram)}")
+    log.info(f"scalogram max = {tr.max(scalogram)}")
+    log.info(f"scalogram min = {tr.min(scalogram)}")
     # plot_scalogram(scalogram[0], title="flute", dt=mw.dt, freqs=freqs)
     # plot_scalogram(scalogram[1], title="chirp", dt=mw.dt, freqs=freqs)
+    # exit()
 
-    J_2_t = 12
-    Q_2_t = 1
-    J_2_f = 6
-    Q_2_f = 1
+    J_2_f = 0
+    Q_2_f = 0
+    highest_freq_f = None
+    # highest_freq_f = 20000
+    J_2_t = 0
+    Q_2_t = 0
+    highest_freq_t = None
+    # highest_freq_t = 15000
 
-    wavelet_bank_2, freqs_2 = make_wavelet_bank(mw, J_2_t, Q_2_t, J_2_f, Q_2_f)
+    wavelet_bank_2, freqs_2 = make_wavelet_bank(mw, J_2_f, Q_2_f, J_2_t, Q_2_t, highest_freq_1=highest_freq_f, highest_freq_2=highest_freq_t)
     # for wavelet in wavelet_bank_2:
     #     wavelet = wavelet.real.detach().numpy()
     #     plt.imshow(wavelet)
     #     plt.show()
+
+    log.info(f"in scalogram.shape = {scalogram.shape}")
+    # jtfst = calc_jtfst_td(scalogram, wavelet_bank_2)
+    jtfst = calc_jtfst_fd(scalogram, wavelet_bank_2)
+    log.info(f"jtfst shape = {jtfst.shape}")
+    log.info(f"jtfst mean = {tr.mean(jtfst)}")
+    log.info(f"jtfst std = {tr.std(jtfst)}")
+    log.info(f"jtfst max = {tr.max(jtfst)}")
+    log.info(f"jtfst min = {tr.min(jtfst)}")
+    real = jtfst[0, 0, :, :].squeeze().real.detach().numpy()
+    plt.imshow(real, aspect="auto", interpolation="none", cmap="OrRd")
+    plt.show()
