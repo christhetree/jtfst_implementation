@@ -98,8 +98,9 @@ if __name__ == "__main__":
     # testing()
     # exit()
 
-    n_samples = 24000
-    # n_samples = 4 * 48000
+    # n_samples = 24000
+    start_n = 48000
+    n_samples = int(1.5 * 48000)
 
     audio_path = "../data/flute.wav"
     flute_audio, audio_sr_1 = torchaudio.load(audio_path)
@@ -114,8 +115,8 @@ if __name__ == "__main__":
 
     audio_path = "../data/sine_sweep.wav"
     chirp_audio, audio_sr_2 = torchaudio.load(audio_path)
-    # chirp_audio = chirp_audio[:, :n_samples]
-    chirp_audio = chirp_audio[:, -n_samples:-8000]
+    chirp_audio = chirp_audio[:, start_n:start_n + n_samples]
+    # chirp_audio = chirp_audio[:, -n_samples:-8000]
 
     # chirp_audio = chirp_audio[:, -n_samples:]
     # chirp_audio = chirp_audio[:, :n_samples // 2]
@@ -147,11 +148,11 @@ if __name__ == "__main__":
     # plt.show()
     # exit()
 
-    J_1 = 2
-    Q_1 = 16
-    highest_freq = None
+    J_1 = 5
+    Q_1 = 12
+    # highest_freq = None
     # highest_freq = 20000
-    # highest_freq = 14080
+    highest_freq = 750
     # J_1 = 3   # No. of octaves
     # Q_1 = 16  # Steps per octave
     # highest_freq = 1760
@@ -169,14 +170,14 @@ if __name__ == "__main__":
     # plot_scalogram(scalogram[1], title="flute", dt=mw.dt, freqs=freqs)
     # exit()
 
-    J_2_f = 0
-    Q_2_f = 0
+    J_2_f = 5
+    Q_2_f = 1
     highest_freq_f = None
     # highest_freq_f = 20000
-    J_2_t = 0
-    Q_2_t = 0
-    highest_freq_t = None
-    # highest_freq_t = 15000
+    J_2_t = 5
+    Q_2_t = 1
+    # highest_freq_t = None
+    highest_freq_t = 750
 
     wavelet_bank_2, freqs_2 = make_wavelet_bank(mw, J_2_f, Q_2_f, J_2_t, Q_2_t, highest_freq_f, highest_freq_t)
     # for wavelet in wavelet_bank_2:
@@ -203,10 +204,15 @@ if __name__ == "__main__":
     log.info(f"jtfst max = {tr.max(jtfst)}")
     log.info(f"jtfst min = {tr.min(jtfst)}")
 
-    # for idx, (freq_f, freq_t, theta) in enumerate(freqs_2):
-    #     pic = jtfst[0, idx, :, :].squeeze().detach().numpy()
-    #     plt.imshow(pic, aspect="auto", interpolation="none", cmap="OrRd")
-    #     plt.title(f"freq_f = {freq_f:.0f}, freq_t = {freq_t:.0f}, theta = {theta}")
-    #     plt.show()
+    n_rows = len(freqs_2) // 2
+    n_cols = 2
+    fig, ax = plt.subplots(n_rows, n_cols, figsize=(6 * n_cols, 6 * n_rows), squeeze=False)
+
+    for idx, (freq_f, freq_t, theta) in enumerate(freqs_2):
+        curr_ax = ax[idx // 2, idx % 2]
+        pic = jtfst[0, idx, :, :].squeeze().detach().numpy()
+        curr_ax.imshow(pic, aspect="auto", interpolation="none", cmap="OrRd")
+        curr_ax.set_title(f"freq_f = {freq_f:.0f}, freq_t = {freq_t:.0f}, theta = {theta}")
+    plt.show()
 
     tr.save(jtfst, "../data/tmp.pt")
