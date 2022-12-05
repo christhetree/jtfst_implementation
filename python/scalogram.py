@@ -147,7 +147,7 @@ def calc_scales_and_freqs(mw: MorletWavelet,
                           steps_per_octave: int,
                           highest_freq: Optional[float] = None) -> (List[float], List[float]):
     assert n_octaves >= 0
-    assert steps_per_octave >= 0
+    assert steps_per_octave >= 1
 
     if highest_freq is None:
         smallest_period = 2.0 * mw.dt
@@ -181,7 +181,7 @@ def make_wavelet_bank(mw: MorletWavelet,
                       n_octaves_1: int,
                       steps_per_octave_1: int,
                       n_octaves_2: Optional[int] = None,
-                      steps_per_octave_2: int = 0,
+                      steps_per_octave_2: int = 1,
                       highest_freq_1: Optional[float] = None,
                       highest_freq_2: Optional[float] = None,
                       normalize: bool = True) -> (List[T], List[Union[Tuple[float, float, int], float]]):
