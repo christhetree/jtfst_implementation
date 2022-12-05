@@ -126,9 +126,10 @@ if __name__ == "__main__":
     assert audio_sr_1 == audio_sr_2
 
     # audio = flute_audio
-    audio = chirp_audio
+    # audio = chirp_audio
     # audio = tr.cat([chirp_audio, flute_audio], dim=0)
     # audio = tr.cat([tr.rand_like(flute_audio), flute_audio], dim=1)
+    audio = tr.sin(2 * tr.pi * 440.0 * (1 / audio_sr_1) * tr.arange(n_samples)).view(1, 1, -1)
 
     sr = audio_sr_1
     w = MorletWavelet.freq_to_w_at_s(1.0, s=1.0)
@@ -148,11 +149,11 @@ if __name__ == "__main__":
     # plt.show()
     # exit()
 
-    J_1 = 5
+    J_1 = 4
     Q_1 = 12
     # highest_freq = None
     # highest_freq = 20000
-    highest_freq = 750
+    highest_freq = 880
     # J_1 = 3   # No. of octaves
     # Q_1 = 16  # Steps per octave
     # highest_freq = 1760
@@ -168,7 +169,7 @@ if __name__ == "__main__":
     log.info(f"scalogram min = {tr.min(scalogram)}")
     plot_scalogram(scalogram[0], title="chirp", dt=mw.dt, freqs=freqs)
     # plot_scalogram(scalogram[1], title="flute", dt=mw.dt, freqs=freqs)
-    # exit()
+    exit()
 
     J_2_f = 5
     Q_2_f = 1
