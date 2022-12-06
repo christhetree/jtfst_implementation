@@ -14,18 +14,30 @@ log.setLevel(level=os.environ.get("LOGLEVEL", "INFO"))
 
 
 class MorletWavelet:
-    def __init__(self, w: float = 6.0, sr: float = 44100, n_sig: float = 3.0, dtype: tr.dtype = tr.complex64):
+    def __init__(self,
+                 w: float = 6.0,
+                 sr_t: float = 44100,
+                 sr_f: Optional[float] = None,
+                 n_sig: float = 3.0,
+                 dtype: tr.dtype = tr.complex64):
         self.w = tr.tensor(w)
-        self.sr = sr
+        self.sr_t = sr_t
+        if sr_f is None:
+            self.sr_f = sr_t
+        else:
+            self.sr_f = sr_f
         self.n_sig = n_sig  # Contains >= 99.7% of the wavelet if >= 3.0
         self.dtype = dtype
 
         self.a = tr.tensor(tr.pi ** -0.25)
         self.b = tr.exp(-0.5 * (self.w ** 2))
-        self.dt = 1.0 / self.sr
+        self.dt = 1.0 / self.sr_t
+        self.df = 1.0 / self.sr_f
 
-        nyquist = self.sr / 2.0
-        self.min_scale = self.period_to_scale(1.0 / nyquist)
+        nyquist_t = self.sr_t / 2.0
+        self.min_scale_t = self.period_to_scale(1.0 / nyquist_t)
+        nyquist_f = self.sr_f / 2.0
+        self.min_scale_f = self.period_to_scale(1.0 / nyquist_f)
 
     def y_1d(self, t: T, s: float = 1.0) -> T:
         assert t.ndim == 1
@@ -35,12 +47,12 @@ class MorletWavelet:
             y = y.to(self.dtype)
         return y
 
-    def create_1d_wavelet_from_scale(self, s: float = 1.0, normalize: bool = True) -> (T, T):
+    def create_1d_wavelet_from_scale(self, s_t: float = 1.0, normalize: bool = True) -> (T, T):
         with tr.no_grad():
-            assert s >= self.min_scale
-            M = int((self.n_sig * s) / self.dt)
+            assert s_t >= self.min_scale_t
+            M = int((self.n_sig * s_t) / self.dt)
             t = tr.arange(-M, M + 1) * self.dt
-            wavelet = self.y_1d(t, s)
+            wavelet = self.y_1d(t, s_t)
             if normalize:
                 wavelet = MorletWavelet.normalize_to_unit_energy(wavelet)
             return t, wavelet
@@ -50,29 +62,30 @@ class MorletWavelet:
         assert t_2.ndim == 1
         assert t_1.size(0) * t_2.size(0) <= 2 ** 26  # TODO(cm)
         y_1 = MorletWavelet.normalize_to_unit_energy(self.y_1d(t_1, s_1))
+        # TODO(cm): why is the reflection opposite?
         if reflect:
-            y_2 = MorletWavelet.normalize_to_unit_energy(self.y_1d(-t_2, s_2))
-        else:
             y_2 = MorletWavelet.normalize_to_unit_energy(self.y_1d(t_2, s_2))
+        else:
+            y_2 = MorletWavelet.normalize_to_unit_energy(self.y_1d(-t_2, s_2))
         y = tr.outer(y_1, y_2)
         return y
 
     def create_2d_wavelet_from_scale(self,
-                                     s_1: float = 1.0,
-                                     s_2: float = 1.0,
+                                     s_f: float = 1.0,
+                                     s_t: float = 1.0,
                                      reflect: bool = False,
                                      normalize: bool = True) -> (T, T, T):
         with tr.no_grad():
-            assert s_1 >= self.min_scale
-            assert s_2 >= self.min_scale
-            M_1 = int((self.n_sig * s_1) / self.dt)
-            t_1 = tr.arange(-M_1, M_1 + 1) * self.dt
-            M_2 = int((self.n_sig * s_2) / self.dt)
-            t_2 = tr.arange(-M_2, M_2 + 1) * self.dt
-            wavelet = self.y_2d(t_1, t_2, s_1, s_2, reflect=reflect)
+            assert s_f >= self.min_scale_f
+            assert s_t >= self.min_scale_t
+            M_f = int((self.n_sig * s_f) / self.df)
+            t_f = tr.arange(-M_f, M_f + 1) * self.df
+            M_t = int((self.n_sig * s_t) / self.dt)
+            t_t = tr.arange(-M_t, M_t + 1) * self.dt
+            wavelet = self.y_2d(t_f, t_t, s_f, s_t, reflect=reflect)
             if normalize:  # Should already be normalized
                 wavelet = MorletWavelet.normalize_to_unit_energy(wavelet)
-            return t_1, t_2, wavelet
+            return t_f, t_t, wavelet
 
     def scale_to_period(self, s: float) -> float:
         return (4 * tr.pi * s) / (self.w + ((2.0 + (self.w ** 2)) ** 0.5))
@@ -142,18 +155,19 @@ def plot_scalogram(scalogram: T,
     plt.show()
 
 
-def calc_scales_and_freqs(mw: MorletWavelet,
-                          n_octaves: int,
+def calc_scales_and_freqs(n_octaves: int,
                           steps_per_octave: int,
+                          sr: float,
+                          mw: MorletWavelet,
                           highest_freq: Optional[float] = None) -> (List[float], List[float]):
     assert n_octaves >= 0
     assert steps_per_octave >= 1
 
     if highest_freq is None:
-        smallest_period = 2.0 * mw.dt
+        smallest_period = 2.0 / sr
     else:
         smallest_period = 1.0 / highest_freq
-        assert smallest_period / mw.dt >= 2.0
+        assert smallest_period * sr >= 2.0
 
     scales = []
     periods = []
@@ -178,50 +192,51 @@ def calc_scales_and_freqs(mw: MorletWavelet,
 
 
 def make_wavelet_bank(mw: MorletWavelet,
-                      n_octaves_1: int,
-                      steps_per_octave_1: int,
-                      n_octaves_2: Optional[int] = None,
-                      steps_per_octave_2: int = 1,
-                      highest_freq_1: Optional[float] = None,
-                      highest_freq_2: Optional[float] = None,
+                      n_octaves_t: int,
+                      steps_per_octave_t: int = 1,
+                      highest_freq_t: Optional[float] = None,
+                      n_octaves_f: Optional[int] = None,
+                      steps_per_octave_f: int = 1,
+                      highest_freq_f: Optional[float] = None,
                       normalize: bool = True) -> (List[T], List[Union[Tuple[float, float, int], float]]):
-    scales_1, freqs_1 = calc_scales_and_freqs(mw, n_octaves_1, steps_per_octave_1, highest_freq_1)
-    log.info(f"freqs_1 highest = {freqs_1[0]:.0f}")
-    log.info(f"freqs_1 lowest  = {freqs_1[-1]:.0f}")
-
-    if n_octaves_2 is not None:
-        scales_2, freqs_2 = calc_scales_and_freqs(mw, n_octaves_2, steps_per_octave_2, highest_freq_2)
-        log.info(f"freqs_2 highest = {freqs_2[0]:.0f}")
-        log.info(f"freqs_2 lowest  = {freqs_2[-1]:.0f}")
+    if n_octaves_f is not None:
+        scales_f, freqs_f = calc_scales_and_freqs(n_octaves_f, steps_per_octave_f, mw.sr_f, mw, highest_freq_f)
+        log.info(f"freqs_f highest = {freqs_f[0]:.0f}")
+        log.info(f"freqs_f lowest  = {freqs_f[-1]:.0f}")
     else:
-        scales_2 = None
-        freqs_2 = None
+        scales_f = None
+        freqs_f = None
+
+    scales_t, freqs_t = calc_scales_and_freqs(n_octaves_t, steps_per_octave_t, mw.sr_t, mw, highest_freq_t)
+    log.info(f"freqs_t highest = {freqs_t[0]:.0f}")
+    log.info(f"freqs_t lowest  = {freqs_t[-1]:.0f}")
 
     wavelet_bank = []
     freqs = []
-    if scales_2:
-        for s_1, freq_1 in zip(scales_1, freqs_1):
-            for s_2, freq_2 in zip(scales_2, freqs_2):
-                _, _, wavelet = mw.create_2d_wavelet_from_scale(s_1, s_2, reflect=False, normalize=normalize)
+    if scales_f:
+        for s_t, freq_t in zip(scales_t, freqs_t):
+            for s_f, freq_f in zip(scales_f, freqs_f):
+                _, _, wavelet = mw.create_2d_wavelet_from_scale(s_f, s_t, reflect=False, normalize=normalize)
                 wavelet_bank.append(wavelet)
-                freqs.append((freq_1, freq_2, 1))
-                _, _, wavelet_reflected = mw.create_2d_wavelet_from_scale(s_1, s_2, reflect=True, normalize=normalize)
+                freqs.append((freq_f, freq_t, 1))
+                _, _, wavelet_reflected = mw.create_2d_wavelet_from_scale(s_f, s_t, reflect=True, normalize=normalize)
                 wavelet_bank.append(wavelet_reflected)
-                freqs.append((freq_1, freq_2, -1))
+                freqs.append((freq_f, freq_t, -1))
     else:
-        for s_1, freq_1 in zip(scales_1, freqs_1):
-            _, wavelet = mw.create_1d_wavelet_from_scale(s_1, normalize=normalize)
+        for s_t, freq_t in zip(scales_t, freqs_t):
+            _, wavelet = mw.create_1d_wavelet_from_scale(s_t, normalize=normalize)
             wavelet_bank.append(wavelet)
-            freqs.append(freq_1)
+            freqs.append(freq_t)
 
     return wavelet_bank, freqs
 
 
 def calc_scalogram_td(audio: T, wavelet_bank: List[T], take_modulus: bool = True) -> T:
     assert audio.ndim == 3
+    assert wavelet_bank
     n_ch = audio.size(1)
 
-    audio_complex = audio.to(mw.dtype)
+    audio_complex = audio.to(wavelet_bank[0].dtype)
     convs = []
     for wavelet in tqdm(wavelet_bank):
         assert wavelet.ndim == 1

@@ -2,7 +2,6 @@ import logging
 import os
 from typing import Optional, List
 
-import matplotlib.pyplot as plt
 import torch as tr
 import torch.nn.functional as F
 import torchaudio
@@ -18,6 +17,7 @@ log.setLevel(level=os.environ.get("LOGLEVEL", "INFO"))
 
 def calc_jtfst_td(scalogram: T, wavelet_bank: List[T], take_modulus: bool = True) -> T:
     assert scalogram.ndim == 3
+    assert wavelet_bank
 
     scalogram = scalogram.unsqueeze(1)  # Image with 1 channel
     scalogram_complex = scalogram.to(mw.dtype)
@@ -81,24 +81,7 @@ def calc_jtfst_fd(scalogram: T,
     return jtfst
 
 
-def testing() -> None:
-    jtfst = tr.load("../data/tmp.pt")
-    log.info(f"jtfst.shape = {jtfst.shape}")
-
-    for idx in range(7):
-        offset = 2
-        curr_idx = offset * 7 + idx
-        slice = jtfst[0, curr_idx, :, :].detach().numpy()
-        plt.imshow(slice, aspect="auto", interpolation="none", cmap="OrRd")
-        plt.title(f"idx = {curr_idx}")
-        plt.show()
-
-
 if __name__ == "__main__":
-    # testing()
-    # exit()
-
-    # n_samples = 24000
     start_n = 48000
     n_samples = int(1.5 * 48000)
 
@@ -126,15 +109,15 @@ if __name__ == "__main__":
     assert audio_sr_1 == audio_sr_2
 
     # audio = flute_audio
-    # audio = chirp_audio
+    audio = chirp_audio
     # audio = tr.cat([chirp_audio, flute_audio], dim=0)
     # audio = tr.cat([tr.rand_like(flute_audio), flute_audio], dim=1)
-    audio = tr.sin(2 * tr.pi * 440.0 * (1 / audio_sr_1) * tr.arange(n_samples)).view(1, 1, -1)
+    # audio = tr.sin(2 * tr.pi * 440.0 * (1 / audio_sr_1) * tr.arange(n_samples)).view(1, 1, -1)
 
     sr = audio_sr_1
     w = MorletWavelet.freq_to_w_at_s(1.0, s=1.0)
     log.info(f"w = {w}")
-    mw = MorletWavelet(w=w, sr=sr)
+    mw = MorletWavelet(w=w, sr_t=sr)
 
     # t, y = mw.create_1d_wavelet_from_scale(s=0.1)
     # log.info(f"energy = {MorletWavelet.calc_energy(y)}")
@@ -142,14 +125,14 @@ if __name__ == "__main__":
     # plt.show()
     # exit()
 
-    # _, _, wavelet = mw.create_2d_wavelet_from_scale(s_1=0.01, s_2=0.01, reflect=False, normalize=False)
+    # _, _, wavelet = mw.create_2d_wavelet_from_scale(s_f=0.02, s_t=0.01, reflect=False, normalize=False)
     # print(MorletWavelet.calc_energy(wavelet))
     # wavelet = wavelet.real.detach().numpy()
     # plt.imshow(wavelet)
     # plt.show()
     # exit()
 
-    J_1 = 4
+    J_1 = 5
     Q_1 = 12
     # highest_freq = None
     # highest_freq = 20000
@@ -157,7 +140,7 @@ if __name__ == "__main__":
     # J_1 = 3   # No. of octaves
     # Q_1 = 16  # Steps per octave
     # highest_freq = 1760
-    wavelet_bank, freqs = make_wavelet_bank(mw, J_1, Q_1, highest_freq_1=highest_freq)
+    wavelet_bank, freqs = make_wavelet_bank(mw, J_1, Q_1, highest_freq_t=highest_freq)
 
     log.info(f"in audio.shape = {audio.shape}")
     # scalogram = calc_scalogram_td(audio, wavelet_bank, take_modulus=True)
@@ -169,51 +152,3 @@ if __name__ == "__main__":
     log.info(f"scalogram min = {tr.min(scalogram)}")
     plot_scalogram(scalogram[0], title="chirp", dt=mw.dt, freqs=freqs)
     # plot_scalogram(scalogram[1], title="flute", dt=mw.dt, freqs=freqs)
-    exit()
-
-    J_2_f = 5
-    Q_2_f = 1
-    highest_freq_f = None
-    # highest_freq_f = 20000
-    J_2_t = 5
-    Q_2_t = 1
-    # highest_freq_t = None
-    highest_freq_t = 750
-
-    wavelet_bank_2, freqs_2 = make_wavelet_bank(mw, J_2_f, Q_2_f, J_2_t, Q_2_t, highest_freq_f, highest_freq_t)
-    # for wavelet in wavelet_bank_2:
-    #     wavelet = wavelet.real.detach().numpy()
-    #     plt.imshow(wavelet)
-    #     plt.show()
-
-    log.info(f"in scalogram.shape = {scalogram.shape}")
-    # jtfst = calc_jtfst_td(scalogram, wavelet_bank_2)
-    # jtfst = calc_jtfst_fd(scalogram, wavelet_bank_2)
-
-    # Low memory implementation
-    max_f_dim = max([w.size(0) for w in wavelet_bank_2])
-    max_t_dim = max([w.size(1) for w in wavelet_bank_2])
-    rows = []
-    for wavelet in tqdm(wavelet_bank_2):
-        row = calc_jtfst_fd(scalogram, [wavelet], max_f_dim=max_f_dim, max_t_dim=max_t_dim)  # Padding is different
-        rows.append(row)
-    jtfst = tr.cat(rows, dim=1)
-
-    log.info(f"jtfst shape = {jtfst.shape}")
-    log.info(f"jtfst mean = {tr.mean(jtfst)}")
-    log.info(f"jtfst std = {tr.std(jtfst)}")
-    log.info(f"jtfst max = {tr.max(jtfst)}")
-    log.info(f"jtfst min = {tr.min(jtfst)}")
-
-    n_rows = len(freqs_2) // 2
-    n_cols = 2
-    fig, ax = plt.subplots(n_rows, n_cols, figsize=(6 * n_cols, 6 * n_rows), squeeze=False)
-
-    for idx, (freq_f, freq_t, theta) in enumerate(freqs_2):
-        curr_ax = ax[idx // 2, idx % 2]
-        pic = jtfst[0, idx, :, :].squeeze().detach().numpy()
-        curr_ax.imshow(pic, aspect="auto", interpolation="none", cmap="OrRd")
-        curr_ax.set_title(f"freq_f = {freq_f:.0f}, freq_t = {freq_t:.0f}, theta = {theta}")
-    plt.show()
-
-    tr.save(jtfst, "../data/tmp.pt")
