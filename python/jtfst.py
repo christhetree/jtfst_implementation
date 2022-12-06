@@ -8,7 +8,8 @@ import torchaudio
 from torch import Tensor as T
 from tqdm import tqdm
 
-from scalogram import MorletWavelet, make_wavelet_bank, plot_scalogram, calc_scalogram_fd, calc_scalogram_td
+from scalogram import plot_scalogram, calc_scalogram_fd, calc_scalogram_td
+from wavelets import MorletWavelet, make_wavelet_bank
 
 logging.basicConfig()
 log = logging.getLogger(__name__)
