@@ -117,12 +117,12 @@ def calc_scalogram_2d(x: T,
 
     # TODO(cm): do in the freq domain and add padding for last frame
     if scat_win_f is not None:
-        if scat_win_f > max_f_dim // 6:
+        if scat_win_f > (max_f_dim + 1) // 6:
             log.warning("Freq scattering window is suspiciously large (probably greater than the lowest central freq)")
         y = scatter(y, scat_win_f, dim=-2, hop_size=hop_size_f)
 
     if scat_win_t is not None:
-        if scat_win_t > max_t_dim // 6:
+        if scat_win_t > (max_t_dim + 1) // 6:
             log.warning("Time scattering window is suspiciously large (probably greater than the lowest central freq)")
         y = scatter(y, scat_win_t, dim=-1, hop_size=hop_size_t)
 
@@ -130,10 +130,11 @@ def calc_scalogram_2d(x: T,
 
 
 if __name__ == "__main__":
-    should_scatter = True
-    # should_scatter = False
+    # should_scatter = True
+    should_scatter = False
+    log.info(f"should_scatter = {should_scatter}")
 
-    start_n = 48000
+    start_n = 5 * 48000
     n_samples = 24000
 
     audio_path = "../data/sine_sweep.wav"
@@ -141,17 +142,22 @@ if __name__ == "__main__":
     chirp_audio = chirp_audio[:, start_n:start_n + n_samples]
     chirp_audio = chirp_audio.view(1, 1, -1)
 
-    # audio = chirp_audio
-    audio = tr.sin(2 * tr.pi * 4000.0 * (1 / sr) * tr.arange(n_samples)).view(1, 1, -1)
+    audio = chirp_audio
+    # audio = tr.sin(2 * tr.pi * 220.0 * (1 / sr) * tr.arange(n_samples)).view(1, 1, -1)
+
+    factor = 2
+    log.info(f"factor = {factor}")
+    sr = sr // factor
+    audio = audio[:, :, ::factor]
 
     w = MorletWavelet.freq_to_w_at_s(1.0, s=1.0)
-    mw = MorletWavelet(w=w, sr=sr)
+    mw = MorletWavelet(w=w, sr_t=sr, sr_f=48000)
 
     J_1 = 5
     Q_1 = 12
-    highest_freq = None
-    # highest_freq = 750
-    wavelet_bank, freqs = make_wavelet_bank(mw, J_1, Q_1, highest_freq_1=highest_freq)
+    # highest_freq = None
+    highest_freq = 12000
+    wavelet_bank, freqs = make_wavelet_bank(mw, J_1, Q_1, highest_freq)
 
     lowest_freq = freqs[-1]
     scat_win = None
@@ -167,7 +173,10 @@ if __name__ == "__main__":
     log.info(f"scalogram std = {tr.std(scalogram)}")
     log.info(f"scalogram max = {tr.max(scalogram)}")
     log.info(f"scalogram min = {tr.min(scalogram)}")
+    log.info(f"scalogram energy = {MorletWavelet.calc_energy(scalogram)}")
+    log.info(f"scalogram energy fixed = {MorletWavelet.calc_energy(scalogram) * (factor ** 2)}")
     plot_scalogram(scalogram[0], title="chirp", dt=mw.dt, freqs=freqs)
+    # exit()
 
     J_2_f = 1
     Q_2_f = 1
@@ -175,10 +184,10 @@ if __name__ == "__main__":
     highest_freq_f = 6000
     J_2_t = 1
     Q_2_t = 1
-    highest_freq_t = None
-    # highest_freq_t = 750
+    # highest_freq_t = None
+    highest_freq_t = 6000
 
-    wavelet_bank_2, freqs_2 = make_wavelet_bank(mw, J_2_f, Q_2_f, J_2_t, Q_2_t, highest_freq_f, highest_freq_t)
+    wavelet_bank_2, freqs_2 = make_wavelet_bank(mw, J_2_t, Q_2_t, highest_freq_t, J_2_f, Q_2_f, highest_freq_f)
 
     lowest_freq_f, lowest_freq_t, _ = freqs_2[-1]
     scat_win_f = None
@@ -189,12 +198,14 @@ if __name__ == "__main__":
         assert sr % lowest_freq_t == 0
         scat_win_t = int(sr / lowest_freq_t)
 
-    jtfst = calc_scalogram_2d(scalogram, wavelet_bank_2, scat_win_f=4, scat_win_t=250)
+    jtfst = calc_scalogram_2d(scalogram, wavelet_bank_2, scat_win_f=scat_win_f, scat_win_t=scat_win_t)
     log.info(f"jtfst shape = {jtfst.shape}")
     log.info(f"jtfst mean = {tr.mean(jtfst)}")
     log.info(f"jtfst std = {tr.std(jtfst)}")
     log.info(f"jtfst max = {tr.max(jtfst)}")
     log.info(f"jtfst min = {tr.min(jtfst)}")
+    log.info(f"jtfst energy = {MorletWavelet.calc_energy(jtfst)}")
+    log.info(f"jtfst energy fixed = {MorletWavelet.calc_energy(jtfst) * (factor ** 2)}")
 
     # pic = jtfst[0, 0, :, :].squeeze().detach().numpy()
     # plt.imshow(pic, aspect="auto", interpolation="none", cmap="OrRd")
