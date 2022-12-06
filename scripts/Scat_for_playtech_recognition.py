@@ -281,18 +281,19 @@ for k in range(len(feature)):
                     label_id[k][m, start_idx:end_idx] = np.ones((end_idx-start_idx), dtype=int) * (m+1)
 # -
 
-plt.plot(label_id[0][1])
+plt.plot(label_id[10].sum(axis=0))
 
-collections.Counter(label_id[0][:,10])
+collections.Counter(label_id[10][:,250])[0]
+
 
 # +
 # use single-labeled part only
 label_all = 0
 import collections
 for k in range(len(label_id)):
-    for m in range(label_id[k].shape[1]):  # no. time frame
-        if collections.Counter(label_id[k][:,m])[0] < 3:   # only one have label (counter=6)
-            label_id[k][:,m] = np.ones((len(tech_name)),dtype=int) * 100
+    # for m in range(label_id[k].shape[1]):  # no. time frame
+    #     # if collections.Counter(label_id[k][:,m])[0] < 3:   # only one have label (counter=6)
+    #     #     label_id[k][:,m] = np.ones((len(tech_name)),dtype=int) * 100
     label_all = np.hstack((label_all, np.sum(label_id[k],axis=0)))
     
 label_id = label_all[1:]
@@ -301,10 +302,11 @@ del(label_all)
 
 plt.plot(label_id)
 
-player_id = np.delete(player_id, np.where(label_id==700), 0)
-feature_conca = np.delete(feature_conca, np.where(label_id==700), 0)
-file_id = np.delete(file_id, np.where(label_id==700), 0)
-label_id = np.delete(label_id, np.where(label_id==700), 0)
+# Remove an outlier datapoint that contains all three PETs overlapping
+player_id = np.delete(player_id, np.where(label_id==5), 0)
+feature_conca = np.delete(feature_conca, np.where(label_id==5), 0)
+file_id = np.delete(file_id, np.where(label_id==5), 0)
+label_id = np.delete(label_id, np.where(label_id==5), 0)
 
 print(label_id.shape, feature_conca.shape, player_id.shape, file_id.shape)
 
@@ -318,10 +320,11 @@ collections.Counter(label_id)
 # This is to avoid the cases that there is no instance or there are too few instances of a given playing technique class in the validation set if we further split the training set based on performer identity. 
 
 # for classification
+import torch
 from sklearn.impute import SimpleImputer
 from sklearn.preprocessing import StandardScaler
 from sklearn.model_selection import GridSearchCV
-from thundersvm import SVC  # use GPU for SVM
+#from thundersvm import SVC  # use GPU for SVM
 from sklearn.metrics import classification_report
 from sklearn.metrics import confusion_matrix
 
@@ -359,6 +362,20 @@ testSplit[4] = player_split[6:8]   # seg idx for testSplit
 # record PRF and confusion obtained at each split
 PRF = {split:np.zeros((len(tech_name)+1,3)) for split in range(5)} # including "other" class which is 0
 confusion = {split:np.zeros((len(tech_name)+1, len(tech_name)+1)) for split in range(5)} 
+
+# +
+subset = np.ones((len(player_id)), dtype=int)*100
+
+for k in range(len(player_id)):
+    if player_id[k] in trainSplit[0]:
+        subset[k] = 0
+    else:
+        subset[k] = 1
+
+label_tr = label_id[subset == 0]
+collections.Counter(label_tr)
+
+# -
 
 # ## 5 splits
 
