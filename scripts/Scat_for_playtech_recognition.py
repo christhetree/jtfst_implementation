@@ -150,26 +150,30 @@ joint = scipy.io.loadmat('dJTFS_avg_PET_feature_full.mat')['fileFeatures'][0, :]
 print("Num files:", len(joint))
 print("Feature dims (of 3rd file):", joint[2].shape)
 
-plt.figure(dpi=150)
-plt.imshow(joint[0], aspect="auto")
-plt.title("10G_Iso_Glissando")
-#plt.savefig("10G_Iso_Glissando.png")
-plt.show()
-#np.save("10G_Iso_Glissando.npy", joint[0])
+# +
+# plt.figure(dpi=150)
+# plt.imshow(joint[0], aspect="auto")
+# plt.title("10G_Iso_Glissando")
+# #plt.savefig("10G_Iso_Glissando.png")
+# plt.show()
+# #np.save("10G_Iso_Glissando.npy", joint[0])
 
-plt.figure(dpi=150)
-plt.imshow(joint[1], aspect="auto")
-plt.title("10G_Iso_Portamento")
-#plt.savefig("10G_Iso_Portamento.png")
-plt.show()
-#np.save("10G_Iso_Portamento.npy", joint[1])
+# +
+# plt.figure(dpi=150)
+# plt.imshow(joint[1], aspect="auto")
+# plt.title("10G_Iso_Portamento")
+# #plt.savefig("10G_Iso_Portamento.png")
+# plt.show()
+# #np.save("10G_Iso_Portamento.npy", joint[1])
 
-plt.figure(dpi=150)
-plt.imshow(joint[2], aspect="auto")
-plt.title("10G_Iso_Acciacatura")
-#plt.savefig("10G_Iso_Acciacatura.png")
-plt.show()
-#np.save("10G_Iso_Acciacatura.npy", joint[2])
+# +
+# plt.figure(dpi=150)
+# plt.imshow(joint[2], aspect="auto")
+# plt.title("10G_Iso_Acciacatura")
+# #plt.savefig("10G_Iso_Acciacatura.png")
+# plt.show()
+# #np.save("10G_Iso_Acciacatura.npy", joint[2])
+# -
 
 # ## feature concatenation
 
@@ -198,8 +202,10 @@ print(feature.shape)
 print(feature[0].shape, feature[1].shape)
 print(sum([f.shape[1] for f in feature]))
 
-plt.figure(dpi=150)
-plt.imshow(feature[2], aspect="auto")
+# +
+# plt.figure(dpi=150)
+# plt.imshow(feature[2], aspect="auto")
+# -
 
 # ## load annotations
 
@@ -279,12 +285,6 @@ for k in range(len(feature)):
                     start_idx = int(file_onoff[2*n] * sr / hop_sample)
                     end_idx = int(file_onoff[2*n+1] * sr / hop_sample)
                     label_id[k][m, start_idx:end_idx] = np.ones((end_idx-start_idx), dtype=int) * (m+1)
-# -
-
-plt.plot(label_id[10].sum(axis=0))
-
-collections.Counter(label_id[10][:,250])[0]
-
 
 # +
 # use single-labeled part only
@@ -298,9 +298,10 @@ for k in range(len(label_id)):
     
 label_id = label_all[1:]
 del(label_all)
-# -
 
-plt.plot(label_id)
+# +
+# plt.plot(label_id)
+# -
 
 # Remove an outlier datapoint that contains all three PETs overlapping
 player_id = np.delete(player_id, np.where(label_id==5), 0)
@@ -324,7 +325,7 @@ import torch
 from sklearn.impute import SimpleImputer
 from sklearn.preprocessing import StandardScaler
 from sklearn.model_selection import GridSearchCV
-#from thundersvm import SVC  # use GPU for SVM
+from thundersvm import SVC  # use GPU for SVM
 from sklearn.metrics import classification_report
 from sklearn.metrics import confusion_matrix
 
