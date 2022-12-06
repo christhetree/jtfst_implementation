@@ -1,4 +1,5 @@
 import logging
+import math
 import os
 from typing import Optional, List
 
@@ -157,8 +158,10 @@ if __name__ == "__main__":
     J_1 = 5
     Q_1 = 12
     # highest_freq = None
-    highest_freq = 12000
+    highest_freq = 6000
     wavelet_bank, freqs = make_wavelet_bank(mw, J_1, Q_1, highest_freq)
+    # for w in wavelet_bank:
+    #     print(f"{w.shape}")
 
     lowest_freq = freqs[-1]
     scat_win = None
@@ -170,25 +173,28 @@ if __name__ == "__main__":
     log.info(f"scattering_window = {T}")
     scalogram = calc_scalogram_1d(audio, wavelet_bank, scat_win=scat_win)
     log.info(f"scalogram shape = {scalogram.shape}")
-    log.info(f"scalogram mean = {tr.mean(scalogram)}")
-    log.info(f"scalogram std = {tr.std(scalogram)}")
-    log.info(f"scalogram max = {tr.max(scalogram)}")
-    log.info(f"scalogram min = {tr.min(scalogram)}")
+    # log.info(f"scalogram mean = {tr.mean(scalogram)}")
+    # log.info(f"scalogram std = {tr.std(scalogram)}")
+    # log.info(f"scalogram max = {tr.max(scalogram)}")
+    # log.info(f"scalogram min = {tr.min(scalogram)}")
     log.info(f"scalogram energy = {MorletWavelet.calc_energy(scalogram)}")
-    log.info(f"scalogram energy fixed = {MorletWavelet.calc_energy(scalogram) * (factor ** 2)}")
-    plot_scalogram(scalogram[0], title="chirp", dt=mw.dt, freqs=freqs)
+    scalogram *= 2 ** (math.log2(factor))
+    log.info(f"scalogram energy fixed = {MorletWavelet.calc_energy(scalogram)}")
+    # plot_scalogram(scalogram[0], title="chirp", dt=mw.dt, freqs=freqs)
     # exit()
 
-    J_2_f = 1
+    J_2_f = 2
     Q_2_f = 1
     # highest_freq_f = None
-    highest_freq_f = 6000
-    J_2_t = 1
+    highest_freq_f = 1500
+    J_2_t = 3
     Q_2_t = 1
     # highest_freq_t = None
     highest_freq_t = 6000
 
     wavelet_bank_2, freqs_2 = make_wavelet_bank(mw, J_2_t, Q_2_t, highest_freq_t, J_2_f, Q_2_f, highest_freq_f)
+    # for w in wavelet_bank_2:
+    #     print(f"{w.shape}")
 
     lowest_freq_f, lowest_freq_t, _ = freqs_2[-1]
     scat_win_f = None
@@ -201,12 +207,15 @@ if __name__ == "__main__":
 
     jtfst = calc_scalogram_2d(scalogram, wavelet_bank_2, scat_win_f=scat_win_f, scat_win_t=scat_win_t)
     log.info(f"jtfst shape = {jtfst.shape}")
-    log.info(f"jtfst mean = {tr.mean(jtfst)}")
-    log.info(f"jtfst std = {tr.std(jtfst)}")
-    log.info(f"jtfst max = {tr.max(jtfst)}")
-    log.info(f"jtfst min = {tr.min(jtfst)}")
+    # log.info(f"jtfst mean = {tr.mean(jtfst)}")
+    # log.info(f"jtfst std = {tr.std(jtfst)}")
+    # log.info(f"jtfst max = {tr.max(jtfst)}")
+    # log.info(f"jtfst min = {tr.min(jtfst)}")
     log.info(f"jtfst energy = {MorletWavelet.calc_energy(jtfst)}")
-    log.info(f"jtfst energy fixed = {MorletWavelet.calc_energy(jtfst) * (factor ** 2)}")
+    jtfst *= 2 ** (math.log2(factor) / 2)
+    log.info(f"jtfst energy fixed = {MorletWavelet.calc_energy(jtfst)}")
+    for idx, w in enumerate(wavelet_bank_2):
+        log.info(f"{idx}: {MorletWavelet.calc_energy(jtfst[0, idx, :, :]):.2f}, shape = {w.shape}")
 
     # pic = jtfst[0, 0, :, :].squeeze().detach().numpy()
     # plt.imshow(pic, aspect="auto", interpolation="none", cmap="OrRd")
