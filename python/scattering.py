@@ -8,7 +8,8 @@ import torchaudio
 from matplotlib import pyplot as plt
 from torch import Tensor as T
 
-from scalogram import MorletWavelet, make_wavelet_bank, plot_scalogram
+from scalogram import plot_scalogram
+from wavelets import MorletWavelet, make_wavelet_bank
 
 logging.basicConfig()
 log = logging.getLogger(__name__)
@@ -145,7 +146,7 @@ if __name__ == "__main__":
     audio = chirp_audio
     # audio = tr.sin(2 * tr.pi * 220.0 * (1 / sr) * tr.arange(n_samples)).view(1, 1, -1)
 
-    factor = 2
+    factor = 1
     log.info(f"factor = {factor}")
     sr = sr // factor
     audio = audio[:, :, ::factor]
