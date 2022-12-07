@@ -5,6 +5,7 @@ from typing import Optional, List
 import torch as tr
 import torch.nn.functional as F
 from torch import Tensor as T
+from tqdm import tqdm
 
 logging.basicConfig()
 log = logging.getLogger(__name__)
@@ -16,7 +17,7 @@ def calc_scalogram_2d_td(scalogram: T, wavelet_bank: List[T], take_modulus: bool
     assert wavelet_bank
 
     scalogram = scalogram.unsqueeze(1)  # Image with 1 channel
-    scalogram_complex = scalogram.to(mw.dtype)
+    scalogram_complex = scalogram.to(wavelet_bank[0].dtype)
     convs = []
     for wavelet in tqdm(wavelet_bank):
         assert wavelet.ndim == 2

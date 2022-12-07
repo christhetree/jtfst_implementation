@@ -8,9 +8,10 @@ import torchaudio
 from matplotlib import pyplot as plt
 from torch import Tensor as T
 
+from filterbanks import make_wavelet_bank
 from scalogram_1d import calc_scalogram_1d, plot_scalogram_1d
 from scalogram_2d import calc_scalogram_2d
-from wavelets import MorletWavelet, make_wavelet_bank
+from wavelets import MorletWavelet
 
 logging.basicConfig()
 log = logging.getLogger(__name__)
@@ -114,13 +115,13 @@ def calc_scat_transform_2d(x: T,
 
 if __name__ == "__main__":
     should_scatter_1 = False
-    should_scatter_f = True
-    should_scatter_t = True
+    should_scatter_f = False
+    should_scatter_t = False
     log.info(f"should_scatter_1 = {should_scatter_1}")
     log.info(f"should_scatter_f = {should_scatter_f}")
     log.info(f"should_scatter_t = {should_scatter_t}")
 
-    start_n = 5 * 48000
+    start_n = int(5 * 48000)
     n_samples = 24000
 
     audio_path = "../data/sine_sweep.wav"
@@ -158,12 +159,12 @@ if __name__ == "__main__":
 
     J_2_f = 3
     Q_2_f = 1
-    highest_freq_f = None
-    # highest_freq_f = 1500
+    # highest_freq_f = None
+    highest_freq_f = 6000
     J_2_t = 3
     Q_2_t = 1
-    highest_freq_t = None
-    # highest_freq_t = 6000
+    # highest_freq_t = None
+    highest_freq_t = 6000
 
     jtfst, freqs_2, wavelet_bank_2 = calc_scat_transform_2d(
         scalogram, sr, J_2_f, J_2_t, Q_2_f, Q_2_t, should_scatter_f, should_scatter_t, highest_freq_f, highest_freq_t)
@@ -175,10 +176,10 @@ if __name__ == "__main__":
     log.info(f"jtfst energy = {MorletWavelet.calc_energy(jtfst)}")
     jtfst *= 2 ** (math.log2(factor) / 2)
     log.info(f"jtfst energy fixed = {MorletWavelet.calc_energy(jtfst)}")
-    # for idx, w in enumerate(wavelet_bank_2):
-    #     log.info(f"{idx}: {MorletWavelet.calc_energy(jtfst[0, idx, :, :]):.2f}, shape = {w.shape}")
+    for idx, w in enumerate(wavelet_bank_2):
+        log.info(f"{idx}: {MorletWavelet.calc_energy(jtfst[0, idx, :, :]):.2f}, shape = {w.shape}")
 
-    pic = jtfst[0, 4, :, :].squeeze().detach().numpy()
+    pic = jtfst[0, 0, :, :].squeeze().detach().numpy()
     plt.imshow(pic, aspect="auto", interpolation="none", cmap="OrRd")
     plt.show()
     exit()
