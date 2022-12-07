@@ -35,7 +35,8 @@ def calc_scalogram_1d_td(audio: T, wavelet_bank: List[T], take_modulus: bool = T
 
 def calc_scalogram_1d(x: T,
                       wavelet_bank: List[T],
-                      take_modulus: bool = True) -> T:
+                      take_modulus: bool = True,
+                      squeeze_channels: bool = True) -> T:
     assert x.ndim == 3
     n_ch = x.size(1)
 
@@ -61,7 +62,8 @@ def calc_scalogram_1d(x: T,
     y = tr.fft.ifft(y_fd)
     # TODO(cm): check why removing padding from the end works empirically after IFFT
     y = y[:, :, :, :-max_padding]
-    y = tr.sum(y, dim=2, keepdim=False)
+    if squeeze_channels:
+        y = y.squeeze(-2)
     if take_modulus:
         y = tr.abs(y)
     return y
