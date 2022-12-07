@@ -20,13 +20,11 @@ log.setLevel(level=os.environ.get("LOGLEVEL", "INFO"))
 
 def scatter(x: T, scat_win: int, dim: int = -1, hop_size: Optional[int] = None) -> T:
     assert x.ndim >= 2
-    assert scat_win > 1
+    assert scat_win >= 1
     assert x.size(dim) >= scat_win
 
     if hop_size is None:
         hop_size = scat_win
-    else:
-        assert hop_size <= scat_win
 
     # TODO(cm): do in the freq domain and add padding for last frame
     unfolded = x.unfold(dimension=dim, size=scat_win, step=hop_size)
@@ -52,7 +50,6 @@ def calc_scat_transform_1d(x: T,
 
     if scat_win is None:
         lowest_freq = freqs[-1]
-        log.info(f"lowest_freq = {lowest_freq}")
         assert sr % lowest_freq == 0
         scat_win = int(sr / lowest_freq)
 
@@ -62,6 +59,35 @@ def calc_scat_transform_1d(x: T,
         log.warning("Scattering window is suspiciously large (probably greater than the lowest central freq)")
     y = scatter(y, scat_win, dim=-1, hop_size=hop_size)
     return y, freqs, wavelet_bank
+
+
+def calc_scat_transform_1d_fast(x: T,
+                                sr: float,
+                                J: int,
+                                Q: int = 1) -> (T, List[float], List[T]):
+    w = MorletWavelet.freq_to_w_at_s(1.0, s=1.0)
+    curr_x = x
+    curr_sr = sr
+    curr_scat_win = 2 ** (J + 1)
+    octaves = []
+    freqs_all = []
+    for curr_j in range(J):
+        if curr_j == J - 1:
+            include_lowest_octave = True
+        else:
+            include_lowest_octave = False
+
+        mw = MorletWavelet(w=w, sr_t=curr_sr)
+        wavelet_bank, freqs = make_wavelet_bank(mw, 1, Q, include_lowest_octave=include_lowest_octave)
+        octave = calc_scalogram_1d(curr_x, wavelet_bank, take_modulus=True)
+        octave = scatter(octave, curr_scat_win)
+        octaves.append(octave)
+        freqs_all.extend(freqs)
+        curr_x = scatter(curr_x, scat_win=2, hop_size=2)
+        curr_sr /= 2
+        curr_scat_win //= 2
+    y = tr.cat(octaves, dim=-2)
+    return y, freqs_all
 
 
 def calc_scat_transform_2d(x: T,
@@ -89,7 +115,6 @@ def calc_scat_transform_2d(x: T,
     lowest_freq_f, lowest_freq_t, _ = freqs[-1]
     if should_scatter_t:
         if scat_win_t is None:
-            log.info(f"lowest_freq_t = {lowest_freq_t}")
             assert mw.sr_t % lowest_freq_t == 0
             scat_win_t = int(mw.sr_t / lowest_freq_t)
 
@@ -114,15 +139,18 @@ def calc_scat_transform_2d(x: T,
 
 
 if __name__ == "__main__":
-    should_scatter_1 = False
+    should_scatter_1 = True
+    # should_scatter_1 = False
     should_scatter_f = False
     should_scatter_t = False
     log.info(f"should_scatter_1 = {should_scatter_1}")
     log.info(f"should_scatter_f = {should_scatter_f}")
     log.info(f"should_scatter_t = {should_scatter_t}")
 
+    # start_n = 0
+    # n_samples = 24000
     start_n = int(5 * 48000)
-    n_samples = 24000
+    n_samples = 7 * 48000
 
     audio_path = "../data/sine_sweep.wav"
     chirp_audio, sr = torchaudio.load(audio_path)
@@ -137,25 +165,34 @@ if __name__ == "__main__":
     sr = sr // factor
     audio = audio[:, :, ::factor]
 
-    J_1 = 4
-    Q_1 = 12
-    # highest_freq = None
-    highest_freq = 6000
+    J_1 = 12
+    Q_1 = 16
+    highest_freq = None
+    # highest_freq = 6000
 
     log.info(f"in audio.shape = {audio.shape}")
     scalogram, freqs, wavelet_bank = calc_scat_transform_1d(
-        audio, sr, J_1, Q_1, should_scatter_1, highest_freq=highest_freq)
+        audio, sr, J_1, Q_1, should_scatter_1, highest_freq=highest_freq, scat_win=None, hop_size=None)
 
     log.info(f"scalogram shape = {scalogram.shape}")
-    # log.info(f"scalogram mean = {tr.mean(scalogram)}")
-    # log.info(f"scalogram std = {tr.std(scalogram)}")
-    # log.info(f"scalogram max = {tr.max(scalogram)}")
-    # log.info(f"scalogram min = {tr.min(scalogram)}")
+    log.info(f"scalogram mean = {tr.mean(scalogram)}")
+    log.info(f"scalogram std = {tr.std(scalogram)}")
+    log.info(f"scalogram max = {tr.max(scalogram)}")
+    log.info(f"scalogram min = {tr.min(scalogram)}")
     log.info(f"scalogram energy = {MorletWavelet.calc_energy(scalogram)}")
     scalogram *= 2 ** (math.log2(factor))
     log.info(f"scalogram energy fixed = {MorletWavelet.calc_energy(scalogram)}")
     plot_scalogram_1d(scalogram[0], title="chirp", dt=1.0 / sr, freqs=freqs)
-    # exit()
+
+    scalogram_fast, freqs_fast = calc_scat_transform_1d_fast(audio, sr, J_1, Q_1)
+    log.info(f"scalogram_fast shape = {scalogram_fast.shape}")
+    log.info(f"scalogram_fast mean = {tr.mean(scalogram_fast)}")
+    log.info(f"scalogram_fast std = {tr.std(scalogram_fast)}")
+    log.info(f"scalogram_fast max = {tr.max(scalogram_fast)}")
+    log.info(f"scalogram_fast min = {tr.min(scalogram_fast)}")
+    log.info(f"scalogram_fast energy = {MorletWavelet.calc_energy(scalogram_fast)}")
+    plot_scalogram_1d(scalogram_fast[0], title="chirp", dt=1.0 / sr, freqs=freqs_fast)
+    exit()
 
     J_2_f = 3
     Q_2_f = 1
