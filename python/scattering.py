@@ -12,6 +12,7 @@ from tqdm import tqdm
 from filterbanks import make_wavelet_bank
 from scalogram_1d import calc_scalogram_1d, plot_scalogram_1d
 from scalogram_2d import calc_scalogram_2d
+from signals import make_pure_sine, make_pulse, make_exp_chirp
 from wavelets import MorletWavelet
 
 logging.basicConfig()
@@ -209,8 +210,8 @@ def calc_scat_transform_2d_fast(x: T,
 
 if __name__ == "__main__":
     should_scatter_1 = False
-    should_scatter_f = True
-    should_scatter_t = True
+    should_scatter_f = False
+    should_scatter_t = False
     log.info(f"should_scatter_1 = {should_scatter_1}")
     log.info(f"should_scatter_f = {should_scatter_f}")
     log.info(f"should_scatter_t = {should_scatter_t}")
@@ -234,13 +235,21 @@ if __name__ == "__main__":
     # audio = chirp_audio
     audio = flute_audio
     # audio = tr.sin(2 * tr.pi * 220.0 * (1 / sr) * tr.arange(n_samples)).view(1, 1, -1)
+    sr = 48000
+    n_samples = 4096
+    audio_1 = make_pure_sine(n_samples, sr, freq=4000, amp=1.0)
+    audio_2 = make_pulse(n_samples, center_loc=0.5, dur_samples=16, amp=4.0)
+    audio_3 = make_exp_chirp(n_samples, sr, start_freq=750, end_freq=20000, amp=1.0)
+    audio = audio_1 + audio_2 + audio_3
+    # audio = audio_3
+    audio = audio.view(1, 1, -1)
 
     factor = 1
     log.info(f"factor = {factor}")
     sr = sr // factor
     audio = audio[:, :, ::factor]
 
-    J_1 = 12
+    J_1 = 7
     Q_1 = 16
     highest_freq = None
     # highest_freq = 6000
@@ -255,7 +264,12 @@ if __name__ == "__main__":
     # log.info(f"scalogram max = {tr.max(scalogram)}")
     # log.info(f"scalogram min = {tr.min(scalogram)}")
     log.info(f"scalogram energy = {MorletWavelet.calc_energy(scalogram)}")
-    plot_scalogram_1d(scalogram[0], title="scalo", dt=1.0 / sr, freqs=freqs)
+
+    mean = tr.mean(scalogram)
+    std = tr.std(scalogram)
+    scalogram_to_plot = tr.clip(scalogram, mean - (4 * std), mean + (4 * std))
+
+    plot_scalogram_1d(scalogram_to_plot[0], title="scalo", dt=1.0 / sr, freqs=freqs, n_y_ticks=J_1)
 
     # scalogram_fast, freqs_fast = calc_scat_transform_1d_fast(audio, sr, J_1, Q_1)
     # log.info(f"scalogram_fast shape = {scalogram_fast.shape}")
@@ -267,88 +281,88 @@ if __name__ == "__main__":
     # plot_scalogram_1d(scalogram_fast[0], title="scalo fast", dt=1.0 / sr, freqs=freqs_fast)
     # exit()
 
-    J_2_f = 4
-    Q_2_f = 1
-    highest_freq_f = None
-    # highest_freq_f = 6000
-    J_2_t = 12
+    J_2_f = 6
+    Q_2_f = 2
+    # highest_freq_f = None
+    highest_freq_f = 6000
+    J_2_t = 3
     Q_2_t = 1
-    highest_freq_t = None
-    # highest_freq_t = 6000
+    # highest_freq_t = None
+    highest_freq_t = 600
     scat_win_f = 2 ** 2
     scat_win_t = 2 ** 11
 
     pic_idx = 12
 
-    # start_t = time.perf_counter()
-    # jtfst, freqs_2, wavelet_bank_2 = calc_scat_transform_2d(scalogram,
-    #                                                         sr,
-    #                                                         J_2_f,
-    #                                                         J_2_t,
-    #                                                         Q_2_f,
-    #                                                         Q_2_t,
-    #                                                         should_scatter_f,
-    #                                                         should_scatter_t,
-    #                                                         highest_freq_f,
-    #                                                         highest_freq_t,
-    #                                                         scat_win_f,
-    #                                                         scat_win_t)
-    # end_t = time.perf_counter()
-    # log.info(f"elapsed time = {end_t - start_t:.2f} seconds")
-    # log.info(f"jtfst shape = {jtfst.shape}")
-    # # log.info(f"jtfst mean = {tr.mean(jtfst)}")
-    # # log.info(f"jtfst std = {tr.std(jtfst)}")
-    # # log.info(f"jtfst max = {tr.max(jtfst)}")
-    # # log.info(f"jtfst min = {tr.min(jtfst)}")
-    # log.info(f"jtfst energy = {MorletWavelet.calc_energy(jtfst)}")
-    #
-    # mean = tr.mean(jtfst)
-    # std = tr.std(jtfst)
-    # jtfst = tr.clip(jtfst, mean - (4 * std), mean + (4 * std))
+    start_t = time.perf_counter()
+    jtfst, freqs_2, wavelet_bank_2 = calc_scat_transform_2d(scalogram,
+                                                            sr,
+                                                            J_2_f,
+                                                            J_2_t,
+                                                            Q_2_f,
+                                                            Q_2_t,
+                                                            should_scatter_f,
+                                                            should_scatter_t,
+                                                            highest_freq_f,
+                                                            highest_freq_t,
+                                                            scat_win_f,
+                                                            scat_win_t)
+    end_t = time.perf_counter()
+    log.info(f"elapsed time = {end_t - start_t:.2f} seconds")
+    log.info(f"jtfst shape = {jtfst.shape}")
+    # log.info(f"jtfst mean = {tr.mean(jtfst)}")
+    # log.info(f"jtfst std = {tr.std(jtfst)}")
+    # log.info(f"jtfst max = {tr.max(jtfst)}")
+    # log.info(f"jtfst min = {tr.min(jtfst)}")
+    log.info(f"jtfst energy = {MorletWavelet.calc_energy(jtfst)}")
+
+    mean = tr.mean(jtfst)
+    std = tr.std(jtfst)
+    jtfst = tr.clip(jtfst, mean - (4 * std), mean + (4 * std))
 
     # pic = jtfst[0, pic_idx, :, :].squeeze().detach().numpy()
     # plt.imshow(pic, aspect="auto", interpolation="none", cmap="OrRd")
     # plt.title("jtfst")
     # plt.show()
 
-    start_t = time.perf_counter()
-    jtfst_fast, freqs_2_fast = calc_scat_transform_2d_fast(scalogram,
-                                                           sr,
-                                                           J_2_f,
-                                                           J_2_t,
-                                                           Q_2_f,
-                                                           Q_2_t,
-                                                           should_scatter_f,
-                                                           should_scatter_t,
-                                                           scat_win_f,
-                                                           scat_win_t)
-    end_t = time.perf_counter()
-    log.info(f"elapsed time = {end_t - start_t:.2f} seconds")
-    log.info(f"lowest_freq_t = {freqs_2_fast[-1][1]:.2f}")
-    log.info(f"jtfst_fast shape = {jtfst_fast.shape}")
-    # log.info(f"jtfst_fast mean = {tr.mean(jtfst_fast)}")
-    # log.info(f"jtfst_fast std = {tr.std(jtfst_fast)}")
-    # log.info(f"jtfst_fast max = {tr.max(jtfst_fast)}")
-    # log.info(f"jtfst_fast min = {tr.min(jtfst_fast)}")
-    log.info(f"jtfst_fast energy = {MorletWavelet.calc_energy(jtfst_fast)}")
+    # start_t = time.perf_counter()
+    # jtfst_fast, freqs_2_fast = calc_scat_transform_2d_fast(scalogram,
+    #                                                        sr,
+    #                                                        J_2_f,
+    #                                                        J_2_t,
+    #                                                        Q_2_f,
+    #                                                        Q_2_t,
+    #                                                        should_scatter_f,
+    #                                                        should_scatter_t,
+    #                                                        scat_win_f,
+    #                                                        scat_win_t)
+    # end_t = time.perf_counter()
+    # log.info(f"elapsed time = {end_t - start_t:.2f} seconds")
+    # log.info(f"lowest_freq_t = {freqs_2_fast[-1][1]:.2f}")
+    # log.info(f"jtfst_fast shape = {jtfst_fast.shape}")
+    # # log.info(f"jtfst_fast mean = {tr.mean(jtfst_fast)}")
+    # # log.info(f"jtfst_fast std = {tr.std(jtfst_fast)}")
+    # # log.info(f"jtfst_fast max = {tr.max(jtfst_fast)}")
+    # # log.info(f"jtfst_fast min = {tr.min(jtfst_fast)}")
+    # log.info(f"jtfst_fast energy = {MorletWavelet.calc_energy(jtfst_fast)}")
+    #
+    # mean = tr.mean(jtfst_fast)
+    # std = tr.std(jtfst_fast)
+    # jtfst_fast = tr.clip(jtfst_fast, mean - (4 * std), mean + (4 * std))
 
-    mean = tr.mean(jtfst_fast)
-    std = tr.std(jtfst_fast)
-    jtfst_fast = tr.clip(jtfst_fast, mean - (4 * std), mean + (4 * std))
+    # pic = jtfst_fast[0, pic_idx, :, :].squeeze().detach().numpy()
+    # plt.imshow(pic, aspect="auto", interpolation="none", cmap="OrRd")
+    # plt.title("jtfst_fast")
+    # plt.show()
+    # exit()
 
-    pic = jtfst_fast[0, pic_idx, :, :].squeeze().detach().numpy()
-    plt.imshow(pic, aspect="auto", interpolation="none", cmap="OrRd")
-    plt.title("jtfst_fast")
-    plt.show()
-    exit()
-
-    n_rows = len(freqs_2_fast) // 2
+    n_rows = len(freqs_2) // 2
     n_cols = 2
     fig, ax = plt.subplots(n_rows, n_cols, figsize=(6 * n_cols, 6 * n_rows), squeeze=False)
 
-    for idx, (freq_f, freq_t, theta) in enumerate(freqs_2_fast):
+    for idx, (freq_f, freq_t, theta) in enumerate(freqs_2):
         curr_ax = ax[idx // 2, idx % 2]
-        pic = jtfst_fast[0, idx, :, :].squeeze().detach().numpy()
+        pic = jtfst[0, idx, :, :].squeeze().detach().numpy()
         curr_ax.imshow(pic, aspect="auto", interpolation="none", cmap="OrRd")
         curr_ax.set_title(f"freq_f = {freq_f:.0f}, freq_t = {freq_t:.0f}, theta = {theta}")
     plt.show()
