@@ -1,5 +1,4 @@
 import logging
-import math
 import os
 import time
 from typing import Optional, List, Tuple
@@ -8,6 +7,7 @@ import torch as tr
 import torchaudio
 from matplotlib import pyplot as plt
 from torch import Tensor as T
+from tqdm import tqdm
 
 from filterbanks import make_wavelet_bank
 from scalogram_1d import calc_scalogram_1d, plot_scalogram_1d
@@ -72,7 +72,7 @@ def calc_scat_transform_1d_fast(x: T,
     curr_scat_win = 2 ** (J + 1)
     octaves = []
     freqs_all = []
-    for curr_j in range(J):
+    for curr_j in tqdm(range(J)):
         if curr_j == J - 1:
             include_lowest_octave = True
         else:
@@ -153,7 +153,9 @@ def calc_scat_transform_2d_fast(x: T,
                                 Q_f: int = 1,
                                 Q_t: int = 1,
                                 should_scatter_f: bool = False,
-                                scat_win_f: Optional[int] = None) -> (T, List[Tuple[float, float, int]]):
+                                should_scatter_t: bool = True,
+                                scat_win_f: Optional[int] = None,
+                                scat_win_t: Optional[int] = None) -> (T, List[Tuple[float, float, int]]):
     if should_scatter_f:
         if scat_win_f is None:
             log.warning(f"should_scatter_f is True, but scat_win_f is None, using a heuristic value of 2")
@@ -161,10 +163,19 @@ def calc_scat_transform_2d_fast(x: T,
     w = MorletWavelet.freq_to_w_at_s(1.0, s=1.0)
     curr_x = x
     curr_sr_t = sr
-    curr_scat_win_t = 2 ** (J_t + 1)
+    curr_highest_freq_t = sr / 2
+
+    if should_scatter_t:
+        if scat_win_t is None:
+            curr_scat_win_t = 2 ** J_t
+        else:
+            curr_scat_win_t = scat_win_t
+    else:
+        curr_scat_win_t = 1
+
     octaves = []
     freqs_all = []
-    for curr_j_t in range(J_t):
+    for curr_j_t in tqdm(range(J_t)):
         if curr_j_t == J_t - 1:
             include_lowest_octave_t = True
         else:
@@ -174,6 +185,7 @@ def calc_scat_transform_2d_fast(x: T,
         wavelet_bank, freqs = make_wavelet_bank(mw,
                                                 n_octaves_t=1,
                                                 steps_per_octave_t=Q_t,
+                                                highest_freq_t=curr_highest_freq_t,
                                                 include_lowest_octave_t=include_lowest_octave_t,
                                                 n_octaves_f=J_f,
                                                 steps_per_octave_f=Q_f)
@@ -183,9 +195,14 @@ def calc_scat_transform_2d_fast(x: T,
             octave = scatter(octave, scat_win_f, dim=-2)
         octaves.append(octave)
         freqs_all.extend(freqs)
-        curr_x = scatter(curr_x, scat_win=2, dim=-1, hop_size=2)
-        curr_sr_t /= 2
-        curr_scat_win_t //= 2
+        if curr_scat_win_t > 1:
+            curr_x = scatter(curr_x, scat_win=2, dim=-1, hop_size=2)
+            curr_sr_t /= 2
+            assert curr_scat_win_t % 2 == 0
+            curr_scat_win_t //= 2
+        else:
+            log.info(f"stopped subsampling time at freq {curr_highest_freq_t}")
+        curr_highest_freq_t /= 2
     y = tr.cat(octaves, dim=-3)
     return y, freqs_all
 
@@ -198,17 +215,24 @@ if __name__ == "__main__":
     log.info(f"should_scatter_f = {should_scatter_f}")
     log.info(f"should_scatter_t = {should_scatter_t}")
 
-    start_n = int(6 * 48000)
-    n_samples = 24000
-    # start_n = 0
-    # n_samples = 7 * 48000
+    # start_n = int(4 * 48000)
+    # n_samples = 2 * 48000
+    start_n = 0
+    n_samples = 2 ** 16
 
     audio_path = "../data/sine_sweep.wav"
     chirp_audio, sr = torchaudio.load(audio_path)
     chirp_audio = chirp_audio[:, start_n:start_n + n_samples]
     chirp_audio = chirp_audio.view(1, 1, -1)
 
-    audio = chirp_audio
+    audio_path = "../data/flute.wav"
+    flute_audio, sr = torchaudio.load(audio_path)
+    flute_audio = flute_audio[:, start_n:n_samples]
+    flute_audio = tr.mean(flute_audio, dim=0)
+    flute_audio = flute_audio.view(1, 1, -1)
+
+    # audio = chirp_audio
+    audio = flute_audio
     # audio = tr.sin(2 * tr.pi * 220.0 * (1 / sr) * tr.arange(n_samples)).view(1, 1, -1)
 
     factor = 1
@@ -216,8 +240,8 @@ if __name__ == "__main__":
     sr = sr // factor
     audio = audio[:, :, ::factor]
 
-    J_1 = 5
-    Q_1 = 12
+    J_1 = 12
+    Q_1 = 16
     highest_freq = None
     # highest_freq = 6000
 
@@ -233,58 +257,59 @@ if __name__ == "__main__":
     log.info(f"scalogram energy = {MorletWavelet.calc_energy(scalogram)}")
     plot_scalogram_1d(scalogram[0], title="scalo", dt=1.0 / sr, freqs=freqs)
 
-    scalogram_fast, freqs_fast = calc_scat_transform_1d_fast(audio, sr, J_1, Q_1)
-    log.info(f"scalogram_fast shape = {scalogram_fast.shape}")
-    # log.info(f"scalogram_fast mean = {tr.mean(scalogram_fast)}")
-    # log.info(f"scalogram_fast std = {tr.std(scalogram_fast)}")
-    # log.info(f"scalogram_fast max = {tr.max(scalogram_fast)}")
-    # log.info(f"scalogram_fast min = {tr.min(scalogram_fast)}")
-    log.info(f"scalogram_fast energy = {MorletWavelet.calc_energy(scalogram_fast)}")
-    plot_scalogram_1d(scalogram_fast[0], title="scalo fast", dt=1.0 / sr, freqs=freqs_fast)
+    # scalogram_fast, freqs_fast = calc_scat_transform_1d_fast(audio, sr, J_1, Q_1)
+    # log.info(f"scalogram_fast shape = {scalogram_fast.shape}")
+    # # log.info(f"scalogram_fast mean = {tr.mean(scalogram_fast)}")
+    # # log.info(f"scalogram_fast std = {tr.std(scalogram_fast)}")
+    # # log.info(f"scalogram_fast max = {tr.max(scalogram_fast)}")
+    # # log.info(f"scalogram_fast min = {tr.min(scalogram_fast)}")
+    # log.info(f"scalogram_fast energy = {MorletWavelet.calc_energy(scalogram_fast)}")
+    # plot_scalogram_1d(scalogram_fast[0], title="scalo fast", dt=1.0 / sr, freqs=freqs_fast)
     # exit()
 
     J_2_f = 4
     Q_2_f = 1
     highest_freq_f = None
     # highest_freq_f = 6000
-    J_2_t = 4
+    J_2_t = 12
     Q_2_t = 1
     highest_freq_t = None
     # highest_freq_t = 6000
-    scat_win_f = 2
-
-    start_t = time.perf_counter()
-    jtfst, freqs_2, wavelet_bank_2 = calc_scat_transform_2d(scalogram,
-                                                            sr,
-                                                            J_2_f,
-                                                            J_2_t,
-                                                            Q_2_f,
-                                                            Q_2_t,
-                                                            should_scatter_f,
-                                                            should_scatter_t,
-                                                            highest_freq_f,
-                                                            highest_freq_t,
-                                                            scat_win_f)
-    end_t = time.perf_counter()
-    log.info(f"elapsed time = {end_t - start_t:.2f}")
-    log.info(f"jtfst shape = {jtfst.shape}")
-    # log.info(f"jtfst mean = {tr.mean(jtfst)}")
-    # log.info(f"jtfst std = {tr.std(jtfst)}")
-    # log.info(f"jtfst max = {tr.max(jtfst)}")
-    # log.info(f"jtfst min = {tr.min(jtfst)}")
-    log.info(f"jtfst energy = {MorletWavelet.calc_energy(jtfst)}")
-    # for idx, w in enumerate(wavelet_bank_2):
-    #     log.info(f"{idx}: {MorletWavelet.calc_energy(jtfst[0, idx, :, :]):.2f}, shape = {w.shape}")
-
-    mean = tr.mean(jtfst)
-    std = tr.std(jtfst)
-    jtfst = tr.clip(jtfst, mean - (4 * std), mean + (4 * std))
+    scat_win_f = 2 ** 2
+    scat_win_t = 2 ** 11
 
     pic_idx = 12
-    pic = jtfst[0, pic_idx, :, :].squeeze().detach().numpy()
-    plt.imshow(pic, aspect="auto", interpolation="none", cmap="OrRd")
-    plt.title("jtfst")
-    plt.show()
+
+    # start_t = time.perf_counter()
+    # jtfst, freqs_2, wavelet_bank_2 = calc_scat_transform_2d(scalogram,
+    #                                                         sr,
+    #                                                         J_2_f,
+    #                                                         J_2_t,
+    #                                                         Q_2_f,
+    #                                                         Q_2_t,
+    #                                                         should_scatter_f,
+    #                                                         should_scatter_t,
+    #                                                         highest_freq_f,
+    #                                                         highest_freq_t,
+    #                                                         scat_win_f,
+    #                                                         scat_win_t)
+    # end_t = time.perf_counter()
+    # log.info(f"elapsed time = {end_t - start_t:.2f} seconds")
+    # log.info(f"jtfst shape = {jtfst.shape}")
+    # # log.info(f"jtfst mean = {tr.mean(jtfst)}")
+    # # log.info(f"jtfst std = {tr.std(jtfst)}")
+    # # log.info(f"jtfst max = {tr.max(jtfst)}")
+    # # log.info(f"jtfst min = {tr.min(jtfst)}")
+    # log.info(f"jtfst energy = {MorletWavelet.calc_energy(jtfst)}")
+    #
+    # mean = tr.mean(jtfst)
+    # std = tr.std(jtfst)
+    # jtfst = tr.clip(jtfst, mean - (4 * std), mean + (4 * std))
+
+    # pic = jtfst[0, pic_idx, :, :].squeeze().detach().numpy()
+    # plt.imshow(pic, aspect="auto", interpolation="none", cmap="OrRd")
+    # plt.title("jtfst")
+    # plt.show()
 
     start_t = time.perf_counter()
     jtfst_fast, freqs_2_fast = calc_scat_transform_2d_fast(scalogram,
@@ -294,9 +319,12 @@ if __name__ == "__main__":
                                                            Q_2_f,
                                                            Q_2_t,
                                                            should_scatter_f,
-                                                           scat_win_f)
+                                                           should_scatter_t,
+                                                           scat_win_f,
+                                                           scat_win_t)
     end_t = time.perf_counter()
-    log.info(f"elapsed time = {end_t - start_t:.2f}")
+    log.info(f"elapsed time = {end_t - start_t:.2f} seconds")
+    log.info(f"lowest_freq_t = {freqs_2_fast[-1][1]:.2f}")
     log.info(f"jtfst_fast shape = {jtfst_fast.shape}")
     # log.info(f"jtfst_fast mean = {tr.mean(jtfst_fast)}")
     # log.info(f"jtfst_fast std = {tr.std(jtfst_fast)}")
@@ -314,13 +342,13 @@ if __name__ == "__main__":
     plt.show()
     exit()
 
-    n_rows = len(freqs_2) // 2
+    n_rows = len(freqs_2_fast) // 2
     n_cols = 2
     fig, ax = plt.subplots(n_rows, n_cols, figsize=(6 * n_cols, 6 * n_rows), squeeze=False)
 
-    for idx, (freq_f, freq_t, theta) in enumerate(freqs_2):
+    for idx, (freq_f, freq_t, theta) in enumerate(freqs_2_fast):
         curr_ax = ax[idx // 2, idx % 2]
-        pic = jtfst[0, idx, :, :].squeeze().detach().numpy()
+        pic = jtfst_fast[0, idx, :, :].squeeze().detach().numpy()
         curr_ax.imshow(pic, aspect="auto", interpolation="none", cmap="OrRd")
         curr_ax.set_title(f"freq_f = {freq_f:.0f}, freq_t = {freq_t:.0f}, theta = {theta}")
     plt.show()
