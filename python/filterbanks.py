@@ -51,24 +51,25 @@ def make_wavelet_bank(mw: MorletWavelet,
                       n_octaves_t: int,
                       steps_per_octave_t: int = 1,
                       highest_freq_t: Optional[float] = None,
+                      include_lowest_octave_t: bool = True,
                       n_octaves_f: Optional[int] = None,
                       steps_per_octave_f: int = 1,
                       highest_freq_f: Optional[float] = None,
-                      include_lowest_octave: bool = True,
+                      include_lowest_octave_f: bool = True,
                       normalize: bool = True) -> (List[T], List[Union[Tuple[float, float, int], float]]):
     if n_octaves_f is not None:
         scales_f, freqs_f = calc_scales_and_freqs(
-            n_octaves_f, steps_per_octave_f, mw.sr_f, mw, highest_freq_f, include_lowest_octave)
-        log.info(f"freqs_f highest = {freqs_f[0]:.2f}")
-        log.info(f"freqs_f lowest  = {freqs_f[-1]:.2f}")
+            n_octaves_f, steps_per_octave_f, mw.sr_f, mw, highest_freq_f, include_lowest_octave_f)
+        log.debug(f"freqs_f highest = {freqs_f[0]:.2f}")
+        log.debug(f"freqs_f lowest  = {freqs_f[-1]:.2f}")
     else:
         scales_f = None
         freqs_f = None
 
     scales_t, freqs_t = calc_scales_and_freqs(
-        n_octaves_t, steps_per_octave_t, mw.sr_t, mw, highest_freq_t, include_lowest_octave)
-    log.info(f"freqs_t highest = {freqs_t[0]:.2f}")
-    log.info(f"freqs_t lowest  = {freqs_t[-1]:.2f}")
+        n_octaves_t, steps_per_octave_t, mw.sr_t, mw, highest_freq_t, include_lowest_octave_t)
+    log.debug(f"freqs_t highest = {freqs_t[0]:.2f}")
+    log.debug(f"freqs_t lowest  = {freqs_t[-1]:.2f}")
 
     wavelet_bank = []
     freqs = []

@@ -113,4 +113,8 @@ class MorletWavelet:
     def normalize_to_unit_energy(wavelet: T) -> T:
         with tr.no_grad():
             energy = MorletWavelet.calc_energy(wavelet)
-            return (energy ** -0.5) * wavelet
+            wavelet *= energy ** -0.5
+            wavelet *= wavelet.size(-1) ** -0.5
+            if wavelet.ndim == 2:
+                wavelet *= wavelet.size(-2) ** -0.5
+            return wavelet
