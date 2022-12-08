@@ -14,7 +14,7 @@
 
 import time
 import os
-from tqdm import tqdm_notebook as tqdm
+from tqdm import tqdm
 import scipy.io, soundfile
 from fnmatch import fnmatch
 #import librosa
@@ -62,9 +62,9 @@ for path, subdirs, files in os.walk(base_dir):
 print('Number of audio files:', format(len(wav_files)))
 
 # save file names for convenient feature extraction by matlab
-with open('file_names.txt', 'w') as f:
-    for item in wav_files:
-        f.write("%s\n" % item)
+# with open('file_names.txt', 'w') as f:
+#     for item in wav_files:
+#         f.write("%s\n" % item)
         
 # check duration of the dataset
 total_len = 0
@@ -75,9 +75,9 @@ for k in range(len(wav_files)):
 print("Total duration of the dataset: %.2f h." % (total_len/3600))
 
 # +
-# with open('file_names_short.txt', 'r') as f:
-#     wav_files = f.readlines()
-#     wav_files = [w.strip() for w in wav_files]
+with open('file_names.txt', 'r') as f:
+    wav_files = f.readlines()
+    wav_files = [w.strip() for w in wav_files]
 # -
 
 # # Feature extraction
@@ -330,7 +330,7 @@ from sklearn.metrics import classification_report
 from sklearn.metrics import confusion_matrix
 
 # classifier-SVM settings
-kernel = 'rbf'; gpu_id = 2
+kernel = 'rbf'; gpu_id = 0
 # param_grid = {'C': [10], 'gamma': [.0001]}   # param_grid for toy experiment
 param_grid = {'C': [256, 128, 64, 32, 16, 8], 'gamma': [2**(-12),2**(-11),2**(-10),2**(-9),2**(-8),2**(-7)]} # para_grid used
 scoring = 'f1_macro'; cv = 3
@@ -374,7 +374,7 @@ for k in range(len(player_id)):
         subset[k] = 1
 
 label_tr = label_id[subset == 0]
-collections.Counter(label_tr)
+print(collections.Counter(label_tr))
 
 # -
 
