@@ -3,6 +3,7 @@ Filters the CBF Dataset to only
 include PETs (i.e. acciacatura, portamento, and glissando)
 Segments audio files so all are less than 60 seconds.
 """
+from copy import copy
 import logging
 import os
 import sys
@@ -131,6 +132,73 @@ def split_audio(
     return splits
 
 
+def save_splits(
+    pets: List[Tuple[Path, List[Path]]],
+    file_splits: List,
+    sample_rates: List,
+    output_dir: Path,
+):
+    """
+    Save the segmented audio files and annotations to disk
+    """
+    all_files = []
+    for ((f, _), s, sr) in zip(pets, file_splits, sample_rates):
+        name = f.stem.split("_")
+        for i in range(len(s)):
+
+            # Create filename with split index
+            split_name = copy(name)
+            split_name[0] = f"{name[0]}{i}"
+            split_name = "_".join(split_name)
+            split_name = f"{split_name}{f.suffix}"
+
+            # Update the full file name with updated root
+            filename = f.with_name(split_name)
+            filename = str(filename).split("/")
+            filename[0] = str(output_dir)
+            filename = Path("/".join(filename))
+
+            # Create the parent directories
+            filename.parent.mkdir(parents=True, exist_ok=True)
+
+            # Write segment audio file
+            soundfile.write(filename, s[i][0], samplerate=sr)
+
+            # Save file name
+            all_files.append(filename)
+
+            segment_annotations = {}
+            for event in sorted(s[i][1]):
+                if not event.data in segment_annotations:
+                    segment_annotations[event.data] = []
+
+                # Add separate lines for event on and off times
+                segment_annotations[event.data].append(
+                    (event.begin, f"on_{event.data}")
+                )
+                segment_annotations[event.data].append((event.end, f"off_{event.data}"))
+
+            # Save annotations as a csv
+            for key, item in segment_annotations.items():
+                if filename.stem.split("_")[1] == "Iso":
+                    annotation_fname = filename.with_name(
+                        f"{Path(split_name).stem}.csv"
+                    )
+                else:
+                    annotation_fname = filename.with_name(
+                        f"{Path(split_name).stem}_tech_{key}.csv"
+                    )
+                df = pd.DataFrame(item)
+                df.to_csv(annotation_fname, header=None, index=False)
+
+    # Save list of all files -- sort before to ensure ordering is consistent
+    log.info(f"Split dataset into {len(all_files)} segmented files")
+    log.info(f"Saving segmented files and annotations to {output_dir}")
+    all_files = sorted(all_files)
+    with open("file_names.txt", "w") as f:
+        f.write("\n".join([str(f) for f in all_files]))
+
+
 def segment_dataset(pets: list) -> Tuple[List[np.ndarray], List[float]]:
     """
     Segments audio files so all are less than 60 seconds.
@@ -190,6 +258,12 @@ def main(arguments):
 
     annotation_files = get_annotation_files(wavfiles)
     log.info(f"{len(annotation_files)} files containing PETs")
+
+    # Segment audio files and annotations
+    file_splits, sample_rates = segment_dataset(annotation_files)
+
+    # Save segmented audio files and annotations
+    save_splits(annotation_files, file_splits, sample_rates, Path(args.out))
 
 
 if __name__ == "__main__":
