@@ -193,7 +193,9 @@ def save_splits(
 
     # Save list of all files -- sort before to ensure ordering is consistent
     log.info(f"Split dataset into {len(all_files)} segmented files")
-    log.info(f"Saving segmented files and annotations to {output_dir}")
+    log.info(f"Saved segmented files and annotations to {output_dir}")
+    log.info(f"Saving list of all files to file_names.txt")
+
     all_files = sorted(all_files)
     with open("file_names.txt", "w") as f:
         f.write("\n".join([str(f) for f in all_files]))
