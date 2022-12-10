@@ -146,7 +146,7 @@ with open('file_names.txt', 'r') as f:
 # -
 
 # load extracted feature
-joint = scipy.io.loadmat('dJTFS_avg_PET_feature_full.mat')['fileFeatures'][0, :]
+joint = scipy.io.loadmat('matlab/dJTFS_acciacatura.mat')['fileFeatures'][0, :]
 print("Num files:", len(joint))
 print("Feature dims (of 3rd file):", joint[2].shape)
 
@@ -196,7 +196,7 @@ for k in range(len(joint)):
 feature = joint_contexted
 #del(adapt, joint, joint_contexted)
 #print(feature.shape, feature[21].shape)
-print(feature.shape)
+print("Mean + stdev of features, dim:", feature.shape)
 # -
 
 print(feature[0].shape, feature[1].shape)
