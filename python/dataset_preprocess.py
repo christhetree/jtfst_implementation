@@ -8,6 +8,7 @@ import os
 import sys
 import argparse
 from pathlib import Path
+from typing import List, Tuple
 
 from intervaltree import IntervalTree
 import numpy as np
@@ -21,7 +22,8 @@ log.setLevel(level=os.environ.get("LOGLEVEL", "INFO"))
 # PETs to include
 tech_types = ["Glissando", "Portamento", "Acciacatura"]
 
-def get_annotation_files(wavfiles: list):
+
+def get_annotation_files(wavfiles: List[Path]):
     """
     Load all the annotation files for each wavfile
     Check to make sure the wavfile contains annotations
@@ -42,7 +44,8 @@ def get_annotation_files(wavfiles: list):
 
     return pets
 
-def load_annotations(annotations):
+
+def load_annotations(annotations: List[Path]):
     """
     Load all annotations for a file and store them in an interval tree.
     This will allow us to quickly check if a given timepoint is annotated
@@ -54,12 +57,19 @@ def load_annotations(annotations):
         times = [t[1]["t"] for t in annos.iterrows()]
         # Each annotation is a pair of times: begin and end
         for k in range(len(times) // 2):
-            begin = times[2*k]
-            end = times[2*k + 1]
+            begin = times[2 * k]
+            end = times[2 * k + 1]
             tree.addi(begin, end, tech)
     return tree
 
-def split_audio(audio, sr, annotations, segment_length=30.0, previous_split=None):
+
+def split_audio(
+    audio: np.ndarray,
+    sr: float,
+    annotations: IntervalTree,
+    segment_length: float = 30.0,
+    previous_split: List = None,
+):
     """
     Split an audio file and the corresponding annotations into segments
     that have a target length of segment_length seconds.
@@ -68,11 +78,11 @@ def split_audio(audio, sr, annotations, segment_length=30.0, previous_split=None
     """
     annotations = annotations.copy()
     num_annotations = len(annotations)
-    
+
     # Create new split list if this is the first pass
     splits = [] if previous_split is None else previous_split
     duration = len(audio) / sr
-    
+
     if duration > segment_length * 2.0:
 
         target_end = segment_length
@@ -80,7 +90,7 @@ def split_audio(audio, sr, annotations, segment_length=30.0, previous_split=None
         # Make sure that target event doesn't land in the middle
         # of PET event -- if it does, then look for the next
         # gap between events greater than 0.5sec to split the file
-        if len(annotations[target_end-0.5:target_end+0.5]):
+        if len(annotations[target_end - 0.5 : target_end + 0.5]):
             a_iter = iter(sorted(annotations[target_end:]))
             prev_end = next(a_iter).end
             while True:
@@ -88,11 +98,13 @@ def split_audio(audio, sr, annotations, segment_length=30.0, previous_split=None
                 if next_event.begin - prev_end >= 0.5:
                     target_end = ((next_event.begin - prev_end) / 2.0) + prev_end
                     break
-                
+
                 prev_end = next_event.end
-        
+
         # Make sure the target end doesn't land during an event
-        assert len(annotations[target_end]) == 0, f"{target_end}: {annotations[target_end]}"
+        assert (
+            len(annotations[target_end]) == 0
+        ), f"{target_end}: {annotations[target_end]}"
 
         # Slice out the fist segment_length of the audio sample
         seg_end = int(target_end * sr)
@@ -115,10 +127,11 @@ def split_audio(audio, sr, annotations, segment_length=30.0, previous_split=None
         splits = split_audio(x_remain, sr, a_remaining, previous_split=splits)
     else:
         splits.append((audio, annotations))
-    
+
     return splits
 
-def segment_dataset(pets: list):
+
+def segment_dataset(pets: list) -> Tuple[List[np.ndarray], List[float]]:
     """
     Segments audio files so all are less than 60 seconds.
     Applies the same segmentation to the annotations.
@@ -140,12 +153,12 @@ def segment_dataset(pets: list):
         for s in splits:
             # Segment duration
             duration = len(s[0]) / sr
-            
+
             # Segment is shorter than 60 seconds
             assert duration < 60.0
             # There are no annotations beyond the segment duration
             assert len(s[1][duration:]) == 0, f"{s[1][duration:]}"
-        
+
         # Make sure that the same number of segments exist
         assert sum([len(s[1]) for s in splits]) == len(annos)
 
@@ -153,12 +166,22 @@ def segment_dataset(pets: list):
         joined = np.concatenate([s[0] for s in splits])
         assert np.all(x == joined)
 
+    return file_splits, sample_rates
+
+
 def main(arguments):
     parser = argparse.ArgumentParser(
-        description=__doc__,
-        formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument('-d', '--dataset', default="./CBFdataset", help="Path to CBF Dataset")
-    parser.add_argument('-o', '--out', default="./CBFdataset_PETS", help="Output folder for PETs Dataset")
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
+    parser.add_argument(
+        "-d", "--dataset", default="./CBFdataset", help="Path to CBF Dataset"
+    )
+    parser.add_argument(
+        "-o",
+        "--out",
+        default="./CBFdataset_PETS",
+        help="Output folder for PETs Dataset",
+    )
     args = parser.parse_args(arguments)
 
     # Wav files and annotation files for PETs
