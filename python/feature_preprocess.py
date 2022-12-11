@@ -1,3 +1,10 @@
+"""
+Preprocess features by concatenating them into a single matrix and
+creating binary labels indicating whether a playing technique is present.
+
+Also calculates the mean, standard deviation, and first order difference
+over a sliding window comprising five freames.
+"""
 import logging
 import os
 import argparse
