@@ -3,6 +3,7 @@ import os
 import argparse
 from pathlib import Path
 import sys
+from typing import List
 
 import numpy as np
 import scipy.io
@@ -21,6 +22,30 @@ def load_features(input_file: Path):
         raise ValueError(f"Unknown file type: {input_file}")
 
     return features
+
+
+def load_wavfile_list(filelist: Path):
+    with open(filelist, "r") as f:
+        wavfiles = [Path(l.strip()) for l in f.readlines()]
+    return wavfiles
+
+
+def get_annotation_filelist(wav_files: List[Path], tech_name: str):
+    """Get annotations for each file"""
+    anno_files = []
+    for k in range(len(wav_files)):
+        if wav_files[k].parts[2] == "Iso":
+            anno_files.append(wav_files[k].with_suffix(".csv"))
+        elif wav_files[k].parts[2] == "Piece":  # 'Piece'
+            anno_techname = wav_files[k].with_name(
+                wav_files[k].stem + "_tech_" + tech_name + ".csv"
+            )
+            if anno_techname.exists():
+                anno_files.append(anno_techname)
+            else:
+                anno_files.append(None)
+
+    return anno_files
 
 
 def temporal_summarization(features, context: int = 2) -> np.ndarray:
@@ -54,13 +79,54 @@ def temporal_summarization(features, context: int = 2) -> np.ndarray:
     return features
 
 
+def get_player_id(filename):
+    """
+    Get player ID from filename
+    """
+    return int(filename.parts[1].replace("Player", ""))
+
+
+def concatenate_features(features, wavfiles):
+    """
+    Concatenate all file features into single matrix.
+    """
+    # Create arrays of the player ID and file ID for each concatenated feature
+    player_ids = []
+    file_ids = []
+    for i, f in enumerate(features):
+        player_ids.append(np.ones(f.shape[1], dtype=int) * get_player_id(wavfiles[i]))
+        file_ids.append(np.ones(f.shape[1], dtype=int) * i)
+
+    player_ids = np.concatenate(player_ids)
+    file_ids = np.concatenate(file_ids)
+
+    # Concatenate all temporal features into a single matrix
+    features = np.concatenate(features, axis=1)
+    features = np.transpose(features)
+
+    assert len(features) == len(file_ids)
+    assert len(features) == len(player_ids)
+
+    return features, player_ids, file_ids
+
+
 def main(arguments):
     parser = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
     )
     parser.add_argument(
         "input",
-        help="Input file to be processed",
+        help="Input features to be processed",
+        type=str,
+    )
+    parser.add_argument(
+        "filelist",
+        help="Text file with ordering of files in the feature array",
+        type=str,
+    )
+    parser.add_argument(
+        "techname",
+        help="Technique name [acciacatura, portamento, glissando]",
         type=str,
     )
     parser.add_argument(
@@ -74,8 +140,17 @@ def main(arguments):
     features = load_features(Path(args.input))
     log.info(f"Loaded features for {len(features)} files")
 
+    wavfiles = load_wavfile_list(Path(args.filelist))
+    assert len(features) == len(wavfiles)
+
+    annos_file = get_annotation_filelist(wavfiles, args.techname)
+    assert len(features) == len(annos_file)
+
     features = temporal_summarization(features)
-    log.info(f"{features.shape}")
+    features, player_ids, file_ids = concatenate_features(features, wavfiles)
+    log.info(
+        f"Concenated all file features into single marix of size: {features.shape}"
+    )
 
 
 if __name__ == "__main__":
