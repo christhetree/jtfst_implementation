@@ -185,9 +185,9 @@ def main(arguments):
     )
     parser.add_argument(
         "-o",
-        "--outdir",
-        default="./features",
-        help="Output folder for preprocessed features",
+        "--outname",
+        default=None,
+        help="Output to save features to -- defaults to features/<techname>.npz",
     )
     parser.add_argument(
         "--samplerate",
@@ -209,12 +209,27 @@ def main(arguments):
     features = load_features(Path(args.input))
     log.info(f"Loaded features for {len(features)} files")
 
+    # Create output directory if it doesn't exist
+    if args.outname is None:
+        args.outname = Path("features") / f"{args.techname.lower()}.npz"
+
+    # Create the output directory if it doesn't exist
+    if not args.outname.parent.exists():
+        Path(args.outname.parent).mkdir(parents=True)
+
+    # If the output file already exists, raise an error
+    if args.outname.exists():
+        raise ValueError(f"Output file {args.outname} already exists")
+
+    # Load wavefile and annotation file lists
     wavfiles = load_wavfile_list(Path(args.filelist))
     assert len(features) == len(wavfiles)
 
     annos_file = get_annotation_filelist(wavfiles, args.techname)
     assert len(features) == len(annos_file)
 
+    # Procress the features by concatenating them into a single matrix and
+    # computing the mean, stdev, and first order difference
     features = temporal_summarization(features)
     features, player_ids, file_ids = concatenate_features(features, wavfiles)
     log.info(
@@ -231,6 +246,15 @@ def main(arguments):
         args.oversampling,
     )
     assert len(features) == len(labels)
+
+    # Save the features and labels to disk
+    np.savez(
+        args.outname,
+        features=features,
+        labels=labels,
+        player_ids=player_ids,
+        file_ids=file_ids,
+    )
 
 
 if __name__ == "__main__":
