@@ -135,8 +135,7 @@ def get_feature_labels(
         t = temporal_support[tech_name.lower()]
 
     hop_size = (2**t) / (2**oversampling)
-    hop_size = int(hop_size / samplerate * 1000)
-    log.info("Hop size: %d ms", hop_size)
+    log.info("Hop size: %d ms", hop_size / samplerate * 1000)
 
     labels = []
     for i, a in enumerate(annotations):
@@ -152,7 +151,13 @@ def get_feature_labels(
             for n in range(len(file_onoff) // 2):
                 start_idx = int(file_onoff[2 * n] * samplerate / hop_size)
                 end_idx = int(file_onoff[2 * n + 1] * samplerate / hop_size)
+
                 x[start_idx:end_idx] = 1
+
+            # Make sure enough events are present -- the number of
+            # changes in the label vector (i.e. event on: 0->1 or event off: 1->0)
+            # should be equal to the number of events in the annotation file
+            assert len(file_onoff) == np.sum(np.abs(np.diff(x)))
 
         labels.append(x)
 
