@@ -6,11 +6,19 @@ import sys
 from typing import List
 
 import numpy as np
+import pandas as pd
 import scipy.io
 
 logging.basicConfig()
 log = logging.getLogger(__name__)
 log.setLevel(level=os.environ.get("LOGLEVEL", "INFO"))
+
+# Default temporal support for each technique
+temporal_support = {
+    "acciacatura": 12,
+    "portamento": 15,
+    "glissando": 14,
+}
 
 
 def load_features(input_file: Path):
@@ -110,6 +118,47 @@ def concatenate_features(features, wavfiles):
     return features, player_ids, file_ids
 
 
+def get_feature_labels(
+    annotations: List[Path],
+    features: np.ndarray,
+    file_ids: np.ndarray,
+    tech_name: str,
+    samplerate: int,
+    t: int,
+    oversampling: int,
+):
+    """
+    Create binary labels indicating whether a playing technique is present in a given frame.
+    """
+    # Scattering hop size
+    if t is None:
+        t = temporal_support[tech_name.lower()]
+
+    hop_size = (2**t) / (2**oversampling)
+    hop_size = int(hop_size / samplerate * 1000)
+    log.info("Hop size: %d ms", hop_size)
+
+    labels = []
+    for i, a in enumerate(annotations):
+        x = np.zeros_like(np.where(file_ids == i)[0])
+        if a is not None and a.stem.split("_")[-1].lower() == tech_name.lower():
+            # Load annotations
+            file_anno = pd.read_csv(a)
+            file_onoff = np.hstack(
+                (float(list(file_anno)[0]), file_anno[list(file_anno)[0]])
+            )
+
+            # Set labels during PET to 1
+            for n in range(len(file_onoff) // 2):
+                start_idx = int(file_onoff[2 * n] * samplerate / hop_size)
+                end_idx = int(file_onoff[2 * n + 1] * samplerate / hop_size)
+                x[start_idx:end_idx] = 1
+
+        labels.append(x)
+
+    return np.concatenate(labels)
+
+
 def main(arguments):
     parser = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
@@ -135,6 +184,21 @@ def main(arguments):
         default="./features",
         help="Output folder for preprocessed features",
     )
+    parser.add_argument(
+        "--samplerate",
+        default=44100,
+        help="Sample rate that features were extracted at",
+    )
+    parser.add_argument(
+        "-t",
+        default=None,
+        help="Exponent of power of two of T used in dJTFST",
+    )
+    parser.add_argument(
+        "--oversampling",
+        default=2,
+        help="Oversampling factor for dJTFST",
+    )
 
     args = parser.parse_args(arguments)
     features = load_features(Path(args.input))
@@ -151,6 +215,17 @@ def main(arguments):
     log.info(
         f"Concenated all file features into single marix of size: {features.shape}"
     )
+
+    labels = get_feature_labels(
+        annos_file,
+        features,
+        file_ids,
+        args.techname,
+        args.samplerate,
+        args.t,
+        args.oversampling,
+    )
+    assert len(features) == len(labels)
 
 
 if __name__ == "__main__":
