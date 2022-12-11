@@ -28,12 +28,12 @@ def temporal_summarization(features, context: int = 2) -> np.ndarray:
     Calculate the mean, standard deviation, and first order difference
     over a temporal frames equal to context*2 + 1
     """
-    updated_features = []
-    for file_features in features:
-        x = np.copy(file_features)
+    for i in range(len(features)):
+        x = np.copy(features[i])
+
         # Repeat the jtfst dimension for statistics
         x = np.tile(x, (3, 1))
-        jtfs_len = file_features.shape[0]
+        jtfs_len = features[i].shape[0]
 
         for n in range(context, x.shape[1] - context):
             x[:jtfs_len, n] = np.mean(
@@ -49,9 +49,9 @@ def temporal_summarization(features, context: int = 2) -> np.ndarray:
                 axis=1,
             )
 
-        updated_features.append(x)
+        features[i] = x
 
-    return np.array(updated_features)
+    return features
 
 
 def main(arguments):
@@ -75,6 +75,7 @@ def main(arguments):
     log.info(f"Loaded features for {len(features)} files")
 
     features = temporal_summarization(features)
+    log.info(f"{features.shape}")
 
 
 if __name__ == "__main__":
