@@ -239,3 +239,7 @@ cython_debug/
 
 # Dataset
 CBFdataset/
+CBFdataset_PETS/
+
+# Matlab matrices
+*.mat
