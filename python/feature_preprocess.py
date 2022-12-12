@@ -165,6 +165,7 @@ def get_feature_labels(
                 # Handle an edge case where the end index is the same or less than the start index
                 end_idx = end_idx if end_idx > start_idx else start_idx + 1
 
+                # Make sure the start and end indices are within the number of frames
                 assert start_idx < len(
                     x
                 ), f"Start index {start_idx} is larger than the number of frames {len(x)} in {a}"
@@ -172,6 +173,7 @@ def get_feature_labels(
                     x
                 ), f"End index {end_idx} is larger than the number of frames {len(x)} in {a}"
 
+                # Check for repeated events
                 if start_idx == prev_start and end_idx == prev_end:
                     log.info(f"Repeated event in {a}")
                     continue
