@@ -1,6 +1,7 @@
 import logging
 import math
 import os
+from typing import Optional
 
 import torch as tr
 from torch import Tensor as T
@@ -49,4 +50,11 @@ def make_exp_chirp(n_samples: int,
         k = x_end / math.log(end_freq / start_freq)
         phase = 2 * tr.pi * k * start_freq * (tr.pow(end_freq / start_freq, x / x_end) - 1.0)
         y = amp * tr.sin(phase)
+        return y
+
+
+def make_hann_window(n_samples: int) -> T:
+    with tr.no_grad():
+        x = tr.arange(n_samples)
+        y = tr.sin(tr.pi * x / n_samples) ** 2
         return y
