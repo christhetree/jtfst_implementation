@@ -55,6 +55,7 @@ class MorletWavelet:
             wavelet = self.y_1d(t, s_t, reflect=reflect)
             if normalize:
                 wavelet = MorletWavelet.normalize_to_unit_energy(wavelet)
+            wavelet = wavelet.to(tr.cuda.current_device() if tr.cuda.is_available() else "cpu")  # TODO: tmp
             return t, wavelet
 
     def y_2d(self, t_1: T, t_2: T, s_1: float = 1.0, s_2: float = 1.0, reflect: bool = False) -> T:
@@ -82,6 +83,7 @@ class MorletWavelet:
             wavelet = self.y_2d(t_f, t_t, s_f, s_t, reflect=reflect)
             if normalize:  # Should already be normalized
                 wavelet = MorletWavelet.normalize_to_unit_energy(wavelet)
+            wavelet = wavelet.to(tr.cuda.current_device() if tr.cuda.is_available() else "cpu")  # TODO: tmp
             return t_f, t_t, wavelet
 
     def scale_to_period(self, s: float) -> float:

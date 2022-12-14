@@ -1,12 +1,12 @@
 import logging
 import os
-from typing import Optional, List
+from typing import Optional, List, Union
 
 import torch as tr
 import torch.nn.functional as F
 import torchaudio
 from matplotlib import pyplot as plt
-from torch import Tensor as T
+from torch import Tensor as T, nn
 from tqdm import tqdm
 
 from filterbanks import make_wavelet_bank
@@ -35,7 +35,7 @@ def average_td(x: T, avg_win: int, dim: int = -1, hop_size: Optional[int] = None
 
 def _calc_scat_transform_1d(x: T,
                             sr: float,
-                            wavelet_bank: List[T],
+                            wavelet_bank: Union[List[T], nn.ParameterList],
                             freqs: List[float],
                             should_avg: bool = False,
                             avg_win: Optional[int] = None,
@@ -126,7 +126,8 @@ def calc_scat_transform_1d_jagged(x: T,
     wavelet_bank, _, freqs_t, _ = make_wavelet_bank(mw, J, Q, highest_freq)
     y_s = []
     freqs_out = []
-    for wavelet, freq_t in tqdm(zip(wavelet_bank, freqs_t)):
+    # for wavelet, freq_t in tqdm(zip(wavelet_bank, freqs_t)):  # TODO(cm): tmp
+    for wavelet, freq_t in zip(wavelet_bank, freqs_t):
         band_freqs = [f_x for f_x in freqs_x if f_x >= 2 * freq_t]  # TODO(cm): check what condition is correct
         n_bands = len(band_freqs)
         if n_bands == 0:

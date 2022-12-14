@@ -105,7 +105,8 @@ def calc_scat_transform_2d_fast(x: T,
 
     octaves = []
     freqs_all = []
-    for curr_j_t in tqdm(range(J_t)):
+    # for curr_j_t in tqdm(range(J_t)):  # TODO(cm): tmp
+    for curr_j_t in range(J_t):
         if curr_j_t == J_t - 1:
             include_lowest_octave_t = True
         else:
@@ -239,14 +240,14 @@ if __name__ == "__main__":
     log.info(f"lowest_freq_t = {freqs_2_fast[-1][1]:.2f}")
     log.info(f"jtfst_fast shape = {jtfst_fast.shape}")
     log.info(f"jtfst_fast energy = {MorletWavelet.calc_energy(jtfst_fast)}")
-    # mean = tr.mean(jtfst_fast)
-    # std = tr.std(jtfst_fast)
-    # jtfst_fast = tr.clip(jtfst_fast, mean - (4 * std), mean + (4 * std))
-    # pic = jtfst_fast[0, pic_idx, :, :].squeeze().detach().numpy()
-    # plt.imshow(pic, aspect="auto", interpolation="none", cmap="OrRd")
-    # plt.title("jtfst_fast")
-    # plt.show()
-    # exit()
+    mean = tr.mean(jtfst_fast)
+    std = tr.std(jtfst_fast)
+    jtfst_fast = tr.clip(jtfst_fast, mean - (4 * std), mean + (4 * std))
+    pic = jtfst_fast[0, pic_idx, :, :].detach().numpy()
+    plt.imshow(pic, aspect="auto", interpolation="none", cmap="OrRd")
+    plt.title("jtfst_fast")
+    plt.show()
+    exit()
 
     n_rows = len(freqs_2_fast) // 2
     n_cols = 2
