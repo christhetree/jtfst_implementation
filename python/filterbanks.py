@@ -52,11 +52,13 @@ def make_wavelet_bank(mw: MorletWavelet,
                       steps_per_octave_t: int = 1,
                       highest_freq_t: Optional[float] = None,
                       include_lowest_octave_t: bool = True,
+                      reflect_t: bool = False,
                       n_octaves_f: Optional[int] = None,
                       steps_per_octave_f: int = 1,
                       highest_freq_f: Optional[float] = None,
                       include_lowest_octave_f: bool = True,
-                      normalize: bool = True) -> (List[T], List[Union[Tuple[float, float, int], float]]):
+                      reflect_f: bool = True,
+                      normalize: bool = True) -> (List[T], List[float], List[float], List[int]):
     if n_octaves_f is not None:
         scales_f, freqs_f = calc_scales_and_freqs(
             n_octaves_f, steps_per_octave_f, mw.sr_f, mw, highest_freq_f, include_lowest_octave_f)
@@ -72,20 +74,36 @@ def make_wavelet_bank(mw: MorletWavelet,
     log.debug(f"freqs_t lowest  = {freqs_t[-1]:.2f}")
 
     wavelet_bank = []
-    freqs = []
+    freqs_f_out = []
+    freqs_t_out = []
+    orientations = []
     if scales_f:
         for s_t, freq_t in zip(scales_t, freqs_t):
             for s_f, freq_f in zip(scales_f, freqs_f):
                 _, _, wavelet = mw.create_2d_wavelet_from_scale(s_f, s_t, reflect=False, normalize=normalize)
                 wavelet_bank.append(wavelet)
-                freqs.append((freq_f, freq_t, 1))
-                _, _, wavelet_reflected = mw.create_2d_wavelet_from_scale(s_f, s_t, reflect=True, normalize=normalize)
-                wavelet_bank.append(wavelet_reflected)
-                freqs.append((freq_f, freq_t, -1))
+                freqs_f_out.append(freq_f)
+                freqs_t_out.append(freq_t)
+                orientations.append(1)
+                if reflect_f:
+                    _, _, wavelet_reflected = mw.create_2d_wavelet_from_scale(s_f,
+                                                                              s_t,
+                                                                              reflect=True,
+                                                                              normalize=normalize)
+                    wavelet_bank.append(wavelet_reflected)
+                    freqs_f_out.append(freq_f)
+                    freqs_t_out.append(freq_t)
+                    orientations.append(-1)
     else:
         for s_t, freq_t in zip(scales_t, freqs_t):
-            _, wavelet = mw.create_1d_wavelet_from_scale(s_t, normalize=normalize)
+            _, wavelet = mw.create_1d_wavelet_from_scale(s_t, reflect=False, normalize=normalize)
             wavelet_bank.append(wavelet)
-            freqs.append(freq_t)
+            freqs_t_out.append(freq_t)
+            orientations.append(1)
+            if reflect_t:
+                _, wavelet_reflected = mw.create_1d_wavelet_from_scale(s_t, reflect=True, normalize=normalize)
+                wavelet_bank.append(wavelet_reflected)
+                freqs_t_out.append(freq_t)
+                orientations.append(-1)
 
-    return wavelet_bank, freqs
+    return wavelet_bank, freqs_f_out, freqs_t_out, orientations

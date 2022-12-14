@@ -50,7 +50,13 @@ def calc_jtfst_1d(x: T,
     for y, freq_t in tqdm(zip(y_t, freqs_t)):
         y = y.squeeze(1)
         y = tr.swapaxes(y, 1, 2)
-        jtfst, freqs_f, _ = calc_scat_transform_1d(y, sr, J_2_f, Q_2_f, should_avg=False, squeeze_channels=False)
+        jtfst, freqs_f, _ = calc_scat_transform_1d(y,
+                                                   sr,
+                                                   J_2_f,
+                                                   Q_2_f,
+                                                   should_avg=False,
+                                                   squeeze_channels=False,
+                                                   reflect_t=False)  # TODO(cm): why is this not changing anything
         jtfst = tr.swapaxes(jtfst, 2, 3)
         jtfst_s.append(jtfst)
         for freq_f in freqs_f:
@@ -115,20 +121,15 @@ def calc_jtfst_2d(x: T,
 if __name__ == "__main__":
     start_n = 0
     n_samples = 2 ** 16
-
-    audio_path = "../data/sine_sweep.wav"
-    chirp_audio, sr = torchaudio.load(audio_path)
-    chirp_audio = chirp_audio[:, start_n:start_n + n_samples]
+    # n_samples = 4096
 
     audio_path = "../data/flute.wav"
     flute_audio, sr = torchaudio.load(audio_path)
     flute_audio = flute_audio[:, start_n:n_samples]
     flute_audio = tr.mean(flute_audio, dim=0)
 
-    # audio = chirp_audio
-    # audio = flute_audio
+    audio = flute_audio
 
-    # n_samples = 4096
     sr = 48000
     audio_1 = make_pure_sine(n_samples, sr, freq=4000, amp=1.0)
     audio_2 = make_pulse(n_samples, center_loc=0.5, dur_samples=128, amp=4.0)
