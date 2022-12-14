@@ -36,20 +36,23 @@ class MorletWavelet:
         nyquist_f = self.sr_f / 2.0
         self.min_scale_f = self.period_to_scale(1.0 / nyquist_f)
 
-    def y_1d(self, t: T, s: float = 1.0) -> T:
+    def y_1d(self, t: T, s: float = 1.0, reflect: bool = False) -> T:
         assert t.ndim == 1
-        x = t / s
+        if reflect:
+            x = -t / s
+        else:
+            x = t / s
         y = self.a * (tr.exp(1j * self.w * x) - self.b) * tr.exp(-0.5 * (x ** 2))
         if y.dtype != self.dtype:
             y = y.to(self.dtype)
         return y
 
-    def create_1d_wavelet_from_scale(self, s_t: float = 1.0, normalize: bool = True) -> (T, T):
+    def create_1d_wavelet_from_scale(self, s_t: float = 1.0, reflect: bool = False, normalize: bool = True) -> (T, T):
         with tr.no_grad():
             assert s_t >= self.min_scale_t
             M = int((self.n_sig * s_t) / self.dt)
             t = tr.arange(-M, M + 1) * self.dt
-            wavelet = self.y_1d(t, s_t)
+            wavelet = self.y_1d(t, s_t, reflect=reflect)
             if normalize:
                 wavelet = MorletWavelet.normalize_to_unit_energy(wavelet)
             return t, wavelet
@@ -60,10 +63,7 @@ class MorletWavelet:
         assert t_1.size(0) * t_2.size(0) <= 2 ** 26  # TODO(cm)
         y_1 = MorletWavelet.normalize_to_unit_energy(self.y_1d(t_1, s_1))
         # TODO(cm): why is the reflection opposite?
-        if reflect:
-            y_2 = MorletWavelet.normalize_to_unit_energy(self.y_1d(t_2, s_2))
-        else:
-            y_2 = MorletWavelet.normalize_to_unit_energy(self.y_1d(-t_2, s_2))
+        y_2 = MorletWavelet.normalize_to_unit_energy(self.y_1d(t_2, s_2, reflect=not reflect))
         y = tr.outer(y_1, y_2)
         return y
 
