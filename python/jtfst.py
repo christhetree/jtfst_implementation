@@ -165,6 +165,10 @@ if __name__ == "__main__":
                                                     avg_win_t=avg_win_t)
     plot_scalogram_1d(scalogram[0], title="scalo", dt=None, freqs=freqs_1, n_y_ticks=12)
 
+    mean = tr.mean(jtfst)
+    std = tr.std(jtfst)
+    jtfst = tr.clip(jtfst, mean - (4 * std), mean + (4 * std))
+
     # Plotting
     n_rows = len(freqs_2) // 2
     n_cols = 2
