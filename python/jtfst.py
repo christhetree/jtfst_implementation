@@ -12,6 +12,7 @@ from scalogram_1d import plot_scalogram_1d
 from scattering_1d import calc_scat_transform_1d, calc_scat_transform_1d_jagged, average_td
 from scattering_2d import calc_scat_transform_2d_fast
 from signals import make_pure_sine, make_pulse, make_exp_chirp
+from wavelets import MorletWavelet
 
 logging.basicConfig()
 log = logging.getLogger(__name__)
@@ -35,8 +36,7 @@ def calc_jtfst_1d(x: T,
                                                    sr,
                                                    J_1,
                                                    Q_1,
-                                                   should_avg=False,
-                                                   avg_win=None)
+                                                   should_avg=False)
     log.info(f"scalogram shape = {scalogram.shape}")
     y_t, freqs_t = calc_scat_transform_1d_jagged(scalogram,
                                                  sr,
@@ -101,8 +101,7 @@ def calc_jtfst_2d(x: T,
                                                    sr,
                                                    J_1,
                                                    Q_1,
-                                                   should_avg=False,
-                                                   avg_win=None)
+                                                   should_avg=False)
     log.info(f"scalogram shape = {scalogram.shape}")
     jtfst, freqs_2 = calc_scat_transform_2d_fast(scalogram,
                                                  sr,
@@ -166,9 +165,17 @@ if __name__ == "__main__":
                                                     avg_win_t=avg_win_t)
     plot_scalogram_1d(scalogram[0], title="scalo", dt=None, freqs=freqs_1, n_y_ticks=12)
 
+    pic_idx = -2
+    log.info(f"jtfst shape = {jtfst.shape}")
+    log.info(f"jtfst energy = {MorletWavelet.calc_energy(jtfst)}")
     mean = tr.mean(jtfst)
     std = tr.std(jtfst)
     jtfst = tr.clip(jtfst, mean - (4 * std), mean + (4 * std))
+    pic = jtfst[0, pic_idx, :, :].detach().numpy()
+    plt.imshow(pic, aspect="auto", interpolation="none", cmap="OrRd")
+    plt.title("jtfst")
+    plt.show()
+    exit()
 
     # Plotting
     n_rows = len(freqs_2) // 2
