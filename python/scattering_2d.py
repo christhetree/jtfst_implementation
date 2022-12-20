@@ -7,14 +7,13 @@ import torch as tr
 import torchaudio
 from matplotlib import pyplot as plt
 from torch import Tensor as T
-from tqdm import tqdm
 
 from filterbanks import make_wavelet_bank
 from scalogram_1d import plot_scalogram_1d
 from scalogram_2d import calc_scalogram_2d
 from scattering_1d import calc_scat_transform_1d, average_td
 from signals import make_pure_sine, make_pulse, make_exp_chirp
-from wavelets import MorletWavelet
+from wavelets import MorletWavelet, DiscreteWavelet
 
 logging.basicConfig()
 log = logging.getLogger(__name__)
@@ -34,8 +33,7 @@ def calc_scat_transform_2d(x: T,
                            avg_win_f: Optional[int] = None,
                            avg_win_t: Optional[int] = None) -> (T, List[Tuple[float, float, int]], List[T]):
     assert x.ndim == 3
-    w = MorletWavelet.freq_to_w_at_s(1.0, s=1.0)
-    mw = MorletWavelet(w=w, sr_t=sr, sr_f=48000)
+    mw = MorletWavelet(sr_t=sr)
     wavelet_bank, freqs_f, freqs_t, orientations = make_wavelet_bank(mw,
                                                                      J_t,
                                                                      Q_t,
@@ -90,7 +88,6 @@ def calc_scat_transform_2d_fast(x: T,
         if avg_win_f is None:
             log.warning(f"should_avg_f is True, but avg_win_f is None, using a heuristic value of 2")
             avg_win_f = 2
-    w = MorletWavelet.freq_to_w_at_s(1.0, s=1.0)
     curr_x = x
     curr_sr_t = sr
     curr_highest_freq_t = sr / 2
@@ -112,7 +109,7 @@ def calc_scat_transform_2d_fast(x: T,
         else:
             include_lowest_octave_t = False
 
-        mw = MorletWavelet(w=w, sr_t=curr_sr_t, sr_f=sr)
+        mw = MorletWavelet(sr_t=curr_sr_t, sr_f=sr)
         wavelet_bank, freqs_f, freqs_t, orientations = make_wavelet_bank(
             mw,
             n_octaves_t=1,
@@ -239,7 +236,7 @@ if __name__ == "__main__":
     log.info(f"elapsed time = {end_t - start_t:.2f} seconds")
     log.info(f"lowest_freq_t = {freqs_2_fast[-1][1]:.2f}")
     log.info(f"jtfst_fast shape = {jtfst_fast.shape}")
-    log.info(f"jtfst_fast energy = {MorletWavelet.calc_energy(jtfst_fast)}")
+    log.info(f"jtfst_fast energy = {DiscreteWavelet.calc_energy(jtfst_fast)}")
     mean = tr.mean(jtfst_fast)
     std = tr.std(jtfst_fast)
     jtfst_fast = tr.clip(jtfst_fast, mean - (4 * std), mean + (4 * std))

@@ -1,6 +1,6 @@
 import logging
 import os
-from typing import Optional, List, Union, Tuple
+from typing import Optional, List
 
 from torch import Tensor as T
 
@@ -80,28 +80,28 @@ def make_wavelet_bank(mw: MorletWavelet,
     if scales_f:
         for s_t, freq_t in zip(scales_t, freqs_t):
             for s_f, freq_f in zip(scales_f, freqs_f):
-                _, _, wavelet = mw.create_2d_wavelet_from_scale(s_f, s_t, reflect=False, normalize=normalize)
+                wavelet = mw.create_2d_wavelet_from_scale(s_f, s_t, reflect=False, normalize=normalize)
                 wavelet_bank.append(wavelet)
                 freqs_f_out.append(freq_f)
                 freqs_t_out.append(freq_t)
                 orientations.append(1)
                 if reflect_f:
-                    _, _, wavelet_reflected = mw.create_2d_wavelet_from_scale(s_f,
-                                                                              s_t,
-                                                                              reflect=True,
-                                                                              normalize=normalize)
+                    wavelet_reflected = mw.create_2d_wavelet_from_scale(s_f,
+                                                                        s_t,
+                                                                        reflect=True,
+                                                                        normalize=normalize)
                     wavelet_bank.append(wavelet_reflected)
                     freqs_f_out.append(freq_f)
                     freqs_t_out.append(freq_t)
                     orientations.append(-1)
     else:
         for s_t, freq_t in zip(scales_t, freqs_t):
-            _, wavelet = mw.create_1d_wavelet_from_scale(s_t, reflect=False, normalize=normalize)
+            wavelet = mw.create_1d_wavelet_from_scale(s_t, reflect=False, normalize=normalize)
             wavelet_bank.append(wavelet)
             freqs_t_out.append(freq_t)
             orientations.append(1)
             if reflect_t:
-                _, wavelet_reflected = mw.create_1d_wavelet_from_scale(s_t, reflect=True, normalize=normalize)
+                wavelet_reflected = mw.create_1d_wavelet_from_scale(s_t, reflect=True, normalize=normalize)
                 wavelet_bank.append(wavelet_reflected)
                 freqs_t_out.append(freq_t)
                 orientations.append(-1)
