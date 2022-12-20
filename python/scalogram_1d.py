@@ -91,6 +91,8 @@ def plot_scalogram_1d(scalogram: T,
         x_labels = [f"{_:.3f}" for _ in x_labels]
         plt.xticks(x_pos, x_labels)
         plt.xlabel("time (s)")
+    else:
+        plt.xlabel("samples")
 
     if freqs is not None:
         assert scalogram.shape[0] == len(freqs)
