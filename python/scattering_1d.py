@@ -168,7 +168,7 @@ if __name__ == "__main__":
     audio = audio.view(1, 1, -1)
 
     J_1 = 12
-    Q_1 = 12
+    Q_1 = 16
     highest_freq = None
     # highest_freq = 6000
 
@@ -200,7 +200,7 @@ if __name__ == "__main__":
     # plot_scalogram_1d(scalogram_fast[0], title="scalo fast", dt=None, freqs_t=freqs_fast)
     # exit()
 
-    J_2_t = 12
+    J_2_t = 13
     Q_2_t = 1
     # highest_freq_t = None
     highest_freq_t = 12000
@@ -223,6 +223,6 @@ if __name__ == "__main__":
     for y, freq in zip(y_t, freqs_t):
         y = y.squeeze(0).squeeze(0).numpy()
         plt.imshow(y, aspect="auto", interpolation="none", cmap="OrRd")
-        plt.title(f"2nd order time scattering, freq = {freq:.2f}")
+        plt.title(f"2nd order time scattering, freq = {freq:.2f} Hz")
         plt.show()
     exit()
