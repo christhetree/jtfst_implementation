@@ -8,10 +8,11 @@ from matplotlib import pyplot as plt
 from torch import Tensor as T
 from tqdm import tqdm
 
-from scalogram_1d import plot_scalogram_1d
-from scattering_1d import calc_scat_transform_1d, calc_scat_transform_1d_jagged, average_td
+from dwt import average_td
+from scattering_1d import calc_scat_transform_1d, calc_scat_transform_1d_jagged
 from scattering_2d import calc_scat_transform_2d_fast
 from signals import make_pure_sine, make_pulse, make_exp_chirp
+from util import plot_scalogram
 from wavelets import DiscreteWavelet
 
 logging.basicConfig()
@@ -163,7 +164,7 @@ if __name__ == "__main__":
                                                     should_avg_t=should_avg_t,
                                                     avg_win_f=avg_win_f,
                                                     avg_win_t=avg_win_t)
-    plot_scalogram_1d(scalogram[0], title="scalo", dt=None, freqs=freqs_1, n_y_ticks=12)
+    plot_scalogram(scalogram[0], title="scalo", dt=None, freqs=freqs_1, n_y_ticks=12)
 
     pic_idx = -2
     log.info(f"jtfst shape = {jtfst.shape}")

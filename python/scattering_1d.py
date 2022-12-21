@@ -9,28 +9,15 @@ from matplotlib import pyplot as plt
 from torch import Tensor as T, nn
 from tqdm import tqdm
 
+from dwt import average_td, dwt_1d
 from filterbanks import make_wavelet_bank
-from scalogram_1d import calc_scalogram_1d, plot_scalogram_1d
 from signals import make_pure_sine, make_pulse, make_exp_chirp
+from util import plot_scalogram
 from wavelets import MorletWavelet, DiscreteWavelet
 
 logging.basicConfig()
 log = logging.getLogger(__name__)
 log.setLevel(level=os.environ.get("LOGLEVEL", "INFO"))
-
-
-def average_td(x: T, avg_win: int, dim: int = -1, hop_size: Optional[int] = None) -> T:
-    assert x.ndim >= 2
-    assert avg_win >= 1
-    assert x.size(dim) >= avg_win
-
-    if hop_size is None:
-        hop_size = avg_win
-
-    # TODO(cm): add padding for last frame
-    unfolded = x.unfold(dimension=dim, size=avg_win, step=hop_size)
-    out = tr.mean(unfolded, dim=-1, keepdim=False)
-    return out
 
 
 def _calc_scat_transform_1d(x: T,
@@ -42,7 +29,7 @@ def _calc_scat_transform_1d(x: T,
                             squeeze_channels: bool = True) -> T:
     assert x.ndim == 3
     assert len(wavelet_bank) == len(freqs)
-    y = calc_scalogram_1d(x, wavelet_bank, take_modulus=True, squeeze_channels=squeeze_channels)
+    y = dwt_1d(x, wavelet_bank, take_modulus=True, squeeze_channels=squeeze_channels)
 
     if not should_avg:
         return y
@@ -97,7 +84,7 @@ def calc_scat_transform_1d_fast(x: T,
                                                         n_octaves_t=1,
                                                         steps_per_octave_t=Q,
                                                         include_lowest_octave_t=include_lowest_octave)
-        octave = calc_scalogram_1d(curr_x, wavelet_bank, take_modulus=True)
+        octave = dwt_1d(curr_x, wavelet_bank, take_modulus=True)
         octave = average_td(octave, curr_avg_win)
         octaves.append(octave)
         freqs_all.extend(freqs_t)
@@ -185,7 +172,7 @@ if __name__ == "__main__":
     mean = tr.mean(scalogram)
     std = tr.std(scalogram)
     scalogram_to_plot = tr.clip(scalogram, mean - (4 * std), mean + (4 * std))
-    plot_scalogram_1d(scalogram_to_plot[0], title="scalo", dt=None, freqs=freqs, n_y_ticks=J_1)
+    plot_scalogram(scalogram_to_plot[0], title="scalo", dt=None, freqs=freqs, n_y_ticks=J_1)
 
     # scalogram_fast, freqs_fast = calc_scat_transform_1d_fast(audio, sr, J_1, Q_1)
     # log.info(f"scalogram_fast shape = {scalogram_fast.shape}")
