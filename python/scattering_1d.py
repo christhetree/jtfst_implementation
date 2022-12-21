@@ -222,7 +222,6 @@ if __name__ == "__main__":
     should_avg = True
     avg_win = 2 ** 5
 
-    log.info(f"in audio.shape = {audio.shape}")
     scat_transform_1d = ScatTransform1D(sr,
                                         J_1,
                                         Q_1,
@@ -230,6 +229,7 @@ if __name__ == "__main__":
                                         avg_win=avg_win,
                                         highest_freq=highest_freq,
                                         squeeze_channels=True)
+    log.info(f"in audio.shape = {audio.shape}")
     scalogram, freqs = scat_transform_1d(audio)
     log.info(f"Lowest freq = {freqs[-1]:.2f}")
 
