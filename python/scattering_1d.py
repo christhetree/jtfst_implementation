@@ -141,6 +141,7 @@ class ScatTransform1DJagged(nn.Module):
             return y_s, freqs_t
 
 
+# TODO(cm): add support for avg_win
 class ScatTransform1DSubsampling(nn.Module):
     def __init__(self,
                  sr: float,
@@ -155,12 +156,12 @@ class ScatTransform1DSubsampling(nn.Module):
         self.squeeze_channels = squeeze_channels
         self.reflect_t = reflect_t
 
+        curr_sr = sr
+        curr_avg_win = 2 ** J
+
         wavelet_banks = []
         avg_wins = []
         freqs_all = []
-
-        curr_sr = sr
-        curr_avg_win = 2 ** (J + 1)
         for curr_j in range(J):
             if curr_j == J - 1:
                 include_lowest_octave = True
@@ -192,6 +193,7 @@ class ScatTransform1DSubsampling(nn.Module):
                 octaves.append(octave)
                 x = average_td(x, avg_win=2, hop_size=2)
             y = tr.cat(octaves, dim=1)
+            assert y.size(1) == len(self.freqs_t)
             return y, self.freqs_t
 
 
