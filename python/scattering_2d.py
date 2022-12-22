@@ -1,16 +1,16 @@
 import logging
 import os
 import time
-from typing import Optional, List, Tuple
+from typing import Optional, List, Tuple, Union
 
 import torch as tr
 import torchaudio
 from matplotlib import pyplot as plt
-from torch import Tensor as T
+from torch import Tensor as T, nn
 
 from dwt import dwt_2d, average_td
 from filterbanks import make_wavelet_bank
-from scattering_1d import calc_scat_transform_1d
+from scattering_1d import ScatTransform1D
 from signals import make_pure_sine, make_pulse, make_exp_chirp
 from util import plot_scalogram
 from wavelets import MorletWavelet, DiscreteWavelet
@@ -20,123 +20,194 @@ log = logging.getLogger(__name__)
 log.setLevel(level=os.environ.get("LOGLEVEL", "INFO"))
 
 
-def calc_scat_transform_2d(x: T,
-                           sr: float,
-                           J_f: int,
-                           J_t: int,
-                           Q_f: int = 1,
-                           Q_t: int = 1,
-                           should_avg_f: bool = False,
-                           should_avg_t: bool = True,
-                           highest_freq_f: Optional[float] = None,
-                           highest_freq_t: Optional[float] = None,
-                           avg_win_f: Optional[int] = None,
-                           avg_win_t: Optional[int] = None) -> (T, List[Tuple[float, float, int]], List[T]):
-    assert x.ndim == 3
-    mw = MorletWavelet(sr_t=sr)
-    wavelet_bank, freqs_f, freqs_t, orientations = make_wavelet_bank(mw,
-                                                                     J_t,
-                                                                     Q_t,
-                                                                     highest_freq_t,
-                                                                     n_octaves_f=J_f,
-                                                                     steps_per_octave_f=Q_f,
-                                                                     highest_freq_f=highest_freq_f,
-                                                                     reflect_f=True)
-    freqs = list(zip(freqs_f, freqs_t, orientations))
-    y = dwt_2d(x, wavelet_bank, take_modulus=True)
+class ScatTransform2D(nn.Module):
+    def __init__(self,
+                 sr: float,
+                 J_f: int,
+                 J_t: int,
+                 Q_f: int = 1,
+                 Q_t: int = 1,
+                 should_avg_f: bool = False,
+                 should_avg_t: bool = True,
+                 avg_win_f: Optional[int] = None,
+                 avg_win_t: Optional[int] = None,
+                 highest_freq_f: Optional[float] = None,
+                 highest_freq_t: Optional[float] = None,
+                 reflect_f: bool = True) -> None:
+        super().__init__()
+        self.sr = sr
+        self.J_f = J_f
+        self.J_t = J_t
+        self.Q_f = Q_f
+        self.Q_t = Q_t
+        self.should_avg_f = should_avg_f
+        self.should_avg_t = should_avg_t
+        self.avg_win_f = avg_win_f
+        self.avg_win_t = avg_win_t
+        self.highest_freq_f = highest_freq_f
+        self.highest_freq_t = highest_freq_t
+        self.reflect_f = reflect_f
 
-    if not should_avg_f and not should_avg_t:
-        return y, freqs, wavelet_bank
+        mw = MorletWavelet(sr_t=sr)
+        wavelet_bank, freqs_f, freqs_t, orientations = make_wavelet_bank(mw,
+                                                                         J_t,
+                                                                         Q_t,
+                                                                         highest_freq_t,
+                                                                         n_octaves_f=J_f,
+                                                                         steps_per_octave_f=Q_f,
+                                                                         highest_freq_f=highest_freq_f,
+                                                                         reflect_f=reflect_f)
+        self.wavelet_bank = nn.ParameterList(wavelet_bank)
+        self.freqs = list(zip(freqs_f, freqs_t, orientations))
 
-    lowest_freq_f, lowest_freq_t, _ = freqs[-1]
-    if should_avg_t:
-        if avg_win_t is None:
-            assert mw.sr_t % lowest_freq_t == 0
-            avg_win_t = int(mw.sr_t / lowest_freq_t)
+    def forward(self, x: T) -> (T, List[Tuple[float, float, int]]):
+        with tr.no_grad():
+            y = ScatTransform2D.calc_scat_transform_2d(x,
+                                                       self.sr,
+                                                       self.wavelet_bank,
+                                                       self.freqs,
+                                                       self.should_avg_f,
+                                                       self.should_avg_t,
+                                                       self.avg_win_f,
+                                                       self.avg_win_t)
+            assert y.size(1) == len(self.freqs)
+            return y, self.freqs
 
-        log.info(f"avg_win_t = {avg_win_t}")
-        max_wavelet_len_t = max([w.size(1) for w in wavelet_bank])
-        if avg_win_t > (max_wavelet_len_t + 1) // 6:
-            log.warning("Time averaging window is suspiciously large (probably greater than the lowest central freq)")
-        y = average_td(y, avg_win_t, dim=-1)
+    @staticmethod
+    def calc_scat_transform_2d(x: T,
+                               sr: float,
+                               wavelet_bank: Union[List[T], nn.ParameterList],
+                               freqs: List[Tuple[float, float, int]],
+                               should_avg_f: bool = False,
+                               should_avg_t: bool = True,
+                               avg_win_f: Optional[int] = None,
+                               avg_win_t: Optional[int] = None) -> T:
+        assert x.ndim == 3
+        assert len(wavelet_bank) == len(freqs)
+        y = dwt_2d(x, wavelet_bank, take_modulus=True)
 
-    if should_avg_f:
-        if avg_win_f is None:
-            log.warning(f"should_avg_f is True, but avg_win_f is None, using a heuristic value of 2")
-            avg_win_f = 2
+        if not should_avg_f and not should_avg_t:
+            return y
 
-        log.info(f"avg_win_f = {avg_win_f}")
-        max_wavelet_len_f = max([w.size(0) for w in wavelet_bank])
-        if avg_win_f > (max_wavelet_len_f + 1) // 6:
-            log.warning("Freq averaging window is suspiciously large (probably greater than the lowest central freq)")
-        y = average_td(y, avg_win_f, dim=-2)
+        lowest_freq_f, lowest_freq_t, _ = freqs[-1]
+        if should_avg_t:
+            if avg_win_t is None:
+                assert sr % lowest_freq_t == 0
+                avg_win_t = int(sr / lowest_freq_t)
+                log.info(f"defaulting avg_win_t to {avg_win_t} samples ({lowest_freq_t:.2f} Hz at {sr:.0f} SR)")
 
-    return y, freqs, wavelet_bank
+            max_wavelet_len_t = max([w.size(1) for w in wavelet_bank])
+            if avg_win_t > (max_wavelet_len_t + 1) // 6:
+                log.warning(
+                    "Time averaging window is suspiciously large (probably greater than the lowest central freq)")
+            y = average_td(y, avg_win_t, dim=-1)
 
-
-def calc_scat_transform_2d_fast(x: T,
-                                sr: float,
-                                J_f: int,
-                                J_t: int,
-                                Q_f: int = 1,
-                                Q_t: int = 1,
-                                should_avg_f: bool = False,
-                                should_avg_t: bool = True,
-                                avg_win_f: Optional[int] = None,
-                                avg_win_t: Optional[int] = None) -> (T, List[Tuple[float, float, int]]):
-    if should_avg_f:
-        if avg_win_f is None:
-            log.warning(f"should_avg_f is True, but avg_win_f is None, using a heuristic value of 2")
-            avg_win_f = 2
-    curr_x = x
-    curr_sr_t = sr
-    curr_highest_freq_t = sr / 2
-
-    if should_avg_t:
-        if avg_win_t is None:
-            curr_avg_win_t = 2 ** J_t
-        else:
-            curr_avg_win_t = avg_win_t
-    else:
-        curr_avg_win_t = 1
-
-    octaves = []
-    freqs_all = []
-    # for curr_j_t in tqdm(range(J_t)):  # TODO(cm): tmp
-    for curr_j_t in range(J_t):
-        if curr_j_t == J_t - 1:
-            include_lowest_octave_t = True
-        else:
-            include_lowest_octave_t = False
-
-        mw = MorletWavelet(sr_t=curr_sr_t, sr_f=sr)
-        wavelet_bank, freqs_f, freqs_t, orientations = make_wavelet_bank(
-            mw,
-            n_octaves_t=1,
-            steps_per_octave_t=Q_t,
-            highest_freq_t=curr_highest_freq_t,
-            include_lowest_octave_t=include_lowest_octave_t,
-            n_octaves_f=J_f,
-            steps_per_octave_f=Q_f,
-            reflect_f=True
-        )
-        freqs = list(zip(freqs_f, freqs_t, orientations))
-        octave = dwt_2d(curr_x, wavelet_bank, take_modulus=True)
-        octave = average_td(octave, curr_avg_win_t, dim=-1)
         if should_avg_f:
-            octave = average_td(octave, avg_win_f, dim=-2)
-        octaves.append(octave)
-        freqs_all.extend(freqs)
-        if curr_avg_win_t > 1:
-            curr_x = average_td(curr_x, avg_win=2, dim=-1)
-            curr_sr_t /= 2
-            assert curr_avg_win_t % 2 == 0
-            curr_avg_win_t //= 2
+            if avg_win_f is None:
+                log.info(f"should_avg_f is True, but avg_win_f is None, using a heuristic value of 2")
+                avg_win_f = 2
+
+            log.info(f"avg_win_f = {avg_win_f}")
+            max_wavelet_len_f = max([w.size(0) for w in wavelet_bank])
+            if avg_win_f > (max_wavelet_len_f + 1) // 6:
+                log.warning(
+                    "Freq averaging window is suspiciously large (probably greater than the lowest central freq)")
+            y = average_td(y, avg_win_f, dim=-2)
+
+        return y
+
+
+class ScatTransform2DSubsampling(nn.Module):
+    def __init__(self,
+                 sr: float,
+                 J_f: int,
+                 J_t: int,
+                 Q_f: int = 1,
+                 Q_t: int = 1,
+                 should_avg_f: bool = False,
+                 should_avg_t: bool = True,
+                 avg_win_f: Optional[int] = None,
+                 avg_win_t: Optional[int] = None,
+                 reflect_f: bool = True) -> None:
+        super().__init__()
+        self.sr = sr
+        self.J_f = J_f
+        self.J_t = J_t
+        self.Q_f = Q_f
+        self.Q_t = Q_t
+        self.should_avg_f = should_avg_f
+        self.should_avg_t = should_avg_t
+        self.avg_win_t = avg_win_t
+        self.reflect_f = reflect_f
+
+        if should_avg_f:
+            if avg_win_f is None:
+                log.info(f"should_avg_f is True, but avg_win_f is None, using a heuristic value of 2")
+                avg_win_f = 2
+        self.avg_win_f = avg_win_f
+
+        curr_sr_t = sr
+        curr_highest_freq_t = sr / 2
+
+        if should_avg_t:
+            if avg_win_t is None:
+                curr_avg_win_t = 2 ** J_t  # TODO(cm): check
+                log.info(f"defaulting avg_win_t to {curr_avg_win_t} samples "
+                         f"({sr / curr_avg_win_t:.2f} Hz at {sr:.0f} SR)")
+            else:
+                curr_avg_win_t = avg_win_t
         else:
-            log.info(f"stopped subsampling time at freq {curr_highest_freq_t}")
-        curr_highest_freq_t /= 2
-    y = tr.cat(octaves, dim=-3)
-    return y, freqs_all
+            curr_avg_win_t = 1
+
+        wavelet_banks = []
+        avg_wins_t = []
+        freqs_all = []
+        for curr_j_t in range(J_t):
+            if curr_j_t == J_t - 1:
+                include_lowest_octave_t = True
+            else:
+                include_lowest_octave_t = False
+
+            mw = MorletWavelet(sr_t=curr_sr_t, sr_f=sr)
+            wavelet_bank, freqs_f, freqs_t, orientations = make_wavelet_bank(
+                mw,
+                n_octaves_t=1,
+                steps_per_octave_t=Q_t,
+                highest_freq_t=curr_highest_freq_t,
+                include_lowest_octave_t=include_lowest_octave_t,
+                n_octaves_f=J_f,
+                steps_per_octave_f=Q_f,
+                reflect_f=reflect_f
+            )
+            wavelet_bank = nn.ParameterList(wavelet_bank)
+            wavelet_banks.append(wavelet_bank)
+            avg_wins_t.append(curr_avg_win_t)
+            freqs = list(zip(freqs_f, freqs_t, orientations))
+            freqs_all.extend(freqs)
+            if curr_avg_win_t > 1:
+                curr_sr_t /= 2
+                assert curr_avg_win_t % 2 == 0
+                curr_avg_win_t //= 2
+            curr_highest_freq_t /= 2
+
+        self.wavelet_banks = nn.ParameterList(wavelet_banks)
+        self.avg_wins_t = avg_wins_t
+        self.freqs = freqs_all
+
+    def forward(self, x: T) -> (T, List[Tuple[float, float, int]]):
+        with tr.no_grad():
+            octaves = []
+            for wavelet_bank, avg_win_t in zip(self.wavelet_banks, self.avg_wins_t):
+                octave = dwt_2d(x, wavelet_bank, take_modulus=True)
+                octave = average_td(octave, avg_win_t, dim=-1)
+                if self.should_avg_f:
+                    octave = average_td(octave, self.avg_win_f, dim=-2)
+                octaves.append(octave)
+                if avg_win_t > 1:
+                    x = average_td(x, avg_win=2, dim=-1)
+            y = tr.cat(octaves, dim=1)
+            assert y.size(1) == len(self.freqs)
+            return y, self.freqs
 
 
 if __name__ == "__main__":
@@ -160,16 +231,18 @@ if __name__ == "__main__":
     audio = audio.view(1, 1, -1)
 
     J_1 = 12
-    Q_1 = 16
+    Q_1 = 12
     highest_freq = None
     # highest_freq = 6000
 
+    scat_transform_1d = ScatTransform1D(sr,
+                                        J_1,
+                                        Q_1,
+                                        should_avg=False,
+                                        highest_freq=highest_freq,
+                                        squeeze_channels=True)
     log.info(f"in audio.shape = {audio.shape}")
-    scalogram, freqs_t, wavelet_bank = calc_scat_transform_1d(audio,
-                                                              sr,
-                                                              J_1,
-                                                              Q_1,
-                                                              highest_freq=highest_freq)
+    scalogram, freqs_t = scat_transform_1d(audio)
     log.info(f"scalogram shape = {scalogram.shape}")
     mean = tr.mean(scalogram)
     std = tr.std(scalogram)
@@ -190,48 +263,35 @@ if __name__ == "__main__":
     log.info(f"should_avg_t = {should_avg_t}")
     avg_win_f = None
     # avg_win_f = 2 ** 2
-    avg_win_t = None
-    # avg_win_t = 2 ** 11
+    # avg_win_t = None
+    avg_win_t = 2 ** 11
 
-    pic_idx = 12
-
-    # start_t = time.perf_counter()
-    # jtfst, freqs_2, wavelet_bank_2 = calc_scat_transform_2d(scalogram,
-    #                                                         sr,
-    #                                                         J_2_f,
-    #                                                         J_2_t,
-    #                                                         Q_2_f,
-    #                                                         Q_2_t,
-    #                                                         should_avg_f,
-    #                                                         should_avg_t,
-    #                                                         highest_freq_f,
-    #                                                         highest_freq_t,
-    #                                                         avg_win_f,
-    #                                                         avg_win_t)
-    # end_t = time.perf_counter()
-    # log.info(f"elapsed time = {end_t - start_t:.2f} seconds")
-    # log.info(f"jtfst shape = {jtfst.shape}")
-    # log.info(f"jtfst energy = {MorletWavelet.calc_energy(jtfst)}")
-    # mean = tr.mean(jtfst)
-    # std = tr.std(jtfst)
-    # jtfst = tr.clip(jtfst, mean - (4 * std), mean + (4 * std))
-    # pic = jtfst[0, pic_idx, :, :].squeeze().detach().numpy()
-    # plt.imshow(pic, aspect="auto", interpolation="none", cmap="OrRd")
-    # plt.title("jtfst")
-    # plt.show()
-    # exit()
+    pic_idx = -6
 
     start_t = time.perf_counter()
-    jtfst_fast, freqs_2_fast = calc_scat_transform_2d_fast(scalogram,
-                                                           sr,
-                                                           J_2_f,
-                                                           J_2_t,
-                                                           Q_2_f,
-                                                           Q_2_t,
-                                                           should_avg_f,
-                                                           should_avg_t,
-                                                           avg_win_f,
-                                                           avg_win_t)
+    # scat_transform_2d = ScatTransform2D(sr,
+    #                                     J_2_f,
+    #                                     J_2_t,
+    #                                     Q_2_f,
+    #                                     Q_2_t,
+    #                                     should_avg_f=should_avg_f,
+    #                                     should_avg_t=should_avg_t,
+    #                                     avg_win_f=avg_win_f,
+    #                                     avg_win_t=avg_win_t,
+    #                                     highest_freq_f=highest_freq_f,
+    #                                     highest_freq_t=highest_freq_t)
+    # jtfst_fast, freqs_2_fast = scat_transform_2d(scalogram)
+    scat_transform_2d = ScatTransform2DSubsampling(sr,
+                                                   J_2_f,
+                                                   J_2_t,
+                                                   Q_2_f,
+                                                   Q_2_t,
+                                                   should_avg_f=should_avg_f,
+                                                   should_avg_t=should_avg_t,
+                                                   avg_win_f=avg_win_f,
+                                                   avg_win_t=avg_win_t)
+    jtfst_fast, freqs_2_fast = scat_transform_2d(scalogram)
+
     end_t = time.perf_counter()
     log.info(f"elapsed time = {end_t - start_t:.2f} seconds")
     log.info(f"lowest_freq_t = {freqs_2_fast[-1][1]:.2f}")
