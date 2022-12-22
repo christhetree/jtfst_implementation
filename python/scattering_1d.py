@@ -4,15 +4,11 @@ from typing import Optional, List, Union
 
 import torch as tr
 import torch.nn.functional as F
-import torchaudio
-from matplotlib import pyplot as plt
 from torch import Tensor as T, nn
 
 from dwt import average_td, dwt_1d
 from filterbanks import make_wavelet_bank
-from signals import make_pure_sine, make_pulse, make_exp_chirp
-from util import plot_scalogram
-from wavelets import MorletWavelet, DiscreteWavelet
+from wavelets import MorletWavelet
 
 logging.basicConfig()
 log = logging.getLogger(__name__)
@@ -119,7 +115,7 @@ class ScatTransform1DJagged(nn.Module):
             orientations = []
             for wavelet, freq_t, orientation in zip(self.wavelet_bank, self.freqs_t, self.orientations):
                 # TODO(cm): check what condition is correct
-                band_freqs = [f_x for f_x in freqs_x if f_x >= 2 * freq_t]
+                band_freqs = [f_x for f_x in freqs_x if f_x >= freq_t]
                 n_bands = len(band_freqs)
                 if n_bands == 0:
                     continue
@@ -201,104 +197,3 @@ class ScatTransform1DSubsampling(nn.Module):
             y = tr.cat(octaves, dim=1)
             assert y.size(1) == len(self.freqs_t) == len(self.orientations)
             return y, self.freqs_t, self.orientations
-
-
-if __name__ == "__main__":
-    start_n = 0
-    n_samples = 2 ** 16
-    # n_samples = 4096
-
-    audio_path = "../data/flute.wav"
-    flute_audio, sr = torchaudio.load(audio_path)
-    flute_audio = flute_audio[:, start_n:n_samples]
-    flute_audio = tr.mean(flute_audio, dim=0)
-
-    audio = flute_audio
-
-    sr = 48000
-    audio_1 = make_pure_sine(n_samples, sr, freq=4000, amp=1.0)
-    audio_2 = make_pulse(n_samples, center_loc=0.5, dur_samples=128, amp=4.0)
-    audio_3 = make_exp_chirp(n_samples, sr, start_freq=20, end_freq=20000, amp=1.0)
-    audio = audio_1 + audio_2 + audio_3
-
-    audio = audio.view(1, 1, -1)
-
-    J_1 = 4
-    Q_1 = 12
-    highest_freq = None
-    # highest_freq = 6000
-    should_avg = True
-    avg_win = 2 ** 5
-
-    scat_transform_1d = ScatTransform1D(sr,
-                                        J_1,
-                                        Q_1,
-                                        should_avg=should_avg,
-                                        avg_win=avg_win,
-                                        highest_freq=highest_freq,
-                                        squeeze_channels=True)
-    log.info(f"in audio.shape = {audio.shape}")
-    scalogram, freqs, _ = scat_transform_1d(audio)
-    log.info(f"Lowest freq = {freqs[-1]:.2f}")
-
-    log.info(f"scalogram shape = {scalogram.shape}")
-    log.info(f"scalogram energy = {DiscreteWavelet.calc_energy(scalogram)}")
-    mean = tr.mean(scalogram)
-    std = tr.std(scalogram)
-    scalogram_to_plot = tr.clip(scalogram.squeeze(2), mean - (4 * std), mean + (4 * std))
-    plot_scalogram(scalogram_to_plot[0], title="scalo", dt=None, freqs=freqs, n_y_ticks=J_1)
-    # exit()
-
-    scat_transform_1d_subsampling = ScatTransform1DSubsampling(sr, J_1, Q_1, squeeze_channels=True)
-
-    scalogram_fast, freqs_fast, _ = scat_transform_1d_subsampling(audio)
-    log.info(f"scalogram_fast shape = {scalogram_fast.shape}")
-    log.info(f"scalogram_fast energy = {DiscreteWavelet.calc_energy(scalogram_fast)}")
-    mean = tr.mean(scalogram_fast)
-    std = tr.std(scalogram_fast)
-    scalogram_to_plot = tr.clip(scalogram_fast.squeeze(2), mean - (4 * std), mean + (4 * std))
-    plot_scalogram(scalogram_to_plot[0], title="scalo_subsampling", dt=None, freqs=freqs_fast, n_y_ticks=J_1)
-    # exit()
-
-    scat_transform_1d_jagged = ScatTransform1DJagged(sr,
-                                                     J_1,
-                                                     Q_1,
-                                                     should_avg=should_avg,
-                                                     avg_win=avg_win,
-                                                     highest_freq=highest_freq,
-                                                     should_pad=True)
-    scalogram_jagged, freqs_jagged, _ = scat_transform_1d_jagged(audio, [sr])
-    scalogram_jagged = tr.cat(scalogram_jagged, dim=1)
-    log.info(f"scalogram_jagged shape = {scalogram_jagged.shape}")
-    log.info(f"scalogram_jagged energy = {DiscreteWavelet.calc_energy(scalogram_jagged)}")
-    mean = tr.mean(scalogram_jagged)
-    std = tr.std(scalogram_jagged)
-    scalogram_to_plot = tr.clip(scalogram_jagged.squeeze(2), mean - (4 * std), mean + (4 * std))
-    plot_scalogram(scalogram_to_plot[0], title="scalo_jagged", dt=None, freqs=freqs_jagged, n_y_ticks=J_1)
-    # exit()
-
-    J_2_t = 13
-    Q_2_t = 1
-    # highest_freq_t = None
-    highest_freq_t = 12000
-
-    should_avg_t = False
-    log.info(f"should_avg_t = {should_avg_t}")
-    avg_win_t = None
-
-    scat_transform_1d_jagged = ScatTransform1DJagged(sr,
-                                                     J_2_t,
-                                                     Q_2_t,
-                                                     should_avg=False,
-                                                     avg_win=avg_win,
-                                                     highest_freq=highest_freq_t,
-                                                     should_pad=True)
-    y_t, freqs_t, _ = scat_transform_1d_jagged(scalogram, freqs)
-    log.info(f"y_t len = {len(y_t)}")
-    log.info(f"freqs_t = {freqs_t}")
-    for y, freq in zip(y_t, freqs_t):
-        y = y.squeeze(0).squeeze(0).numpy()
-        plt.imshow(y, aspect="auto", interpolation="none", cmap="OrRd")
-        plt.title(f"2nd order time scattering, freq = {freq:.2f} Hz")
-        plt.show()
-    exit()
