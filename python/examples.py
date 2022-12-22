@@ -5,6 +5,7 @@ import time
 import torch as tr
 import torchaudio
 from torch import Tensor as T
+from tqdm import tqdm
 
 from jtfst import JTFST1D, JTFST2D
 from plotting import plot_scalogram, plot_3d_tensor
@@ -53,6 +54,7 @@ def make_chirp_pulse_sine_audio(n_samples: int = 2 ** 16, sr: int = 48000) -> (T
 
 
 def time_scat_1st_order_example() -> None:
+    log.info("time_scat_1st_order_example")
     audio, sr = make_chirp_pulse_sine_audio()
     log.info(f"audio.shape = {audio.shape}")
     log.info(f"sr = {sr}")
@@ -103,6 +105,7 @@ def time_scat_1st_order_example() -> None:
 
 
 def time_scat_2nd_order_example() -> None:
+    log.info("time_scat_2nd_order_example")
     audio, sr = make_chirp_pulse_sine_audio()
     log.info(f"audio.shape = {audio.shape}")
     log.info(f"sr = {sr}")
@@ -148,6 +151,7 @@ def time_scat_2nd_order_example() -> None:
 
 
 def jtfst_example() -> None:
+    log.info("jtfst_example")
     audio, sr = make_chirp_pulse_sine_audio()
     log.info(f"audio.shape = {audio.shape}")
     log.info(f"sr = {sr}")
@@ -221,7 +225,56 @@ def jtfst_example() -> None:
     plot_3d_tensor(jtfst[0], n_cols=2, titles=titles, freqs=freqs_1, n_y_ticks=J_1)
 
 
+def gpu_example() -> None:
+    log.info("gpu_example")
+    if not tr.cuda.is_available():
+        log.info("No GPU available!")
+        return
+
+    bs = 1
+    n_iter = 100
+
+    audio, sr = make_chirp_pulse_sine_audio()
+    log.info(f"audio.shape = {audio.shape}")
+    log.info(f"sr = {sr}")
+
+    J_1 = 12
+    J_2_f = 2
+    J_2_t = 12
+    Q_1 = 16
+    Q_2_f = 1
+    Q_2_t = 1
+    should_avg_f = False
+    should_avg_t = True
+    avg_win_f = 4  # Average across 25% of an octave if Q_1 == 16
+    avg_win_t = 2 ** 9
+    reflect_f = True
+
+    # jtfst_module = JTFST1D
+    jtfst_module = JTFST2D
+    jtfst_model = jtfst_module(sr,
+                               J_1=J_1,
+                               J_2_f=J_2_f,
+                               J_2_t=J_2_t,
+                               Q_1=Q_1,
+                               Q_2_f=Q_2_f,
+                               Q_2_t=Q_2_t,
+                               should_avg_f=should_avg_f,
+                               should_avg_t=should_avg_t,
+                               avg_win_f=avg_win_f,
+                               avg_win_t=avg_win_t,
+                               reflect_f=reflect_f)
+
+    jtfst_model.to(device)
+    batch = audio.repeat(bs, 1, 1)
+    batch = batch.to(device)
+
+    for _ in tqdm(range(n_iter)):
+        scalogram, freqs_1, jtfst, freqs_2 = jtfst_model(batch)
+
+
 if __name__ == "__main__":
     time_scat_1st_order_example()
     time_scat_2nd_order_example()
     jtfst_example()
+    gpu_example()
