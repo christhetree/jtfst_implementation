@@ -7,7 +7,6 @@ import torch.nn.functional as F
 import torchaudio
 from matplotlib import pyplot as plt
 from torch import Tensor as T, nn
-from tqdm import tqdm
 
 from dwt import average_td, dwt_1d
 from filterbanks import make_wavelet_bank
@@ -41,11 +40,12 @@ class ScatTransform1D(nn.Module):
         self.reflect_t = reflect_t
 
         mw = MorletWavelet(sr_t=sr)
-        wavelet_bank, _, freqs_t, _ = make_wavelet_bank(mw, J, Q, highest_freq, reflect_t=reflect_t)
+        wavelet_bank, _, freqs_t, orientations = make_wavelet_bank(mw, J, Q, highest_freq, reflect_t=reflect_t)
         self.wavelet_bank = nn.ParameterList(wavelet_bank)
         self.freqs_t = freqs_t
+        self.orientations = orientations
 
-    def forward(self, x: T) -> (T, List[float]):
+    def forward(self, x: T) -> (T, List[float], List[int]):
         with tr.no_grad():
             y = ScatTransform1D.calc_scat_transform_1d(x,
                                                        self.sr,
@@ -54,8 +54,8 @@ class ScatTransform1D(nn.Module):
                                                        self.should_avg,
                                                        self.avg_win,
                                                        self.squeeze_channels)
-            assert y.size(1) == len(self.freqs_t)
-            return y, self.freqs_t
+            assert y.size(1) == len(self.freqs_t) == len(self.orientations)
+            return y, self.freqs_t, self.orientations
 
     @staticmethod
     def calc_scat_transform_1d(x: T,
@@ -105,17 +105,19 @@ class ScatTransform1DJagged(nn.Module):
         self.should_pad = should_pad
 
         mw = MorletWavelet(sr_t=sr)
-        wavelet_bank, _, freqs_t, _ = make_wavelet_bank(mw, J, Q, highest_freq, reflect_t=reflect_t)
+        wavelet_bank, _, freqs_t, orientations = make_wavelet_bank(mw, J, Q, highest_freq, reflect_t=reflect_t)
         self.wavelet_bank = nn.ParameterList(wavelet_bank)
         self.freqs_t = freqs_t
+        self.orientations = orientations
 
-    def forward(self, x: T, freqs_x: List[float]) -> (List[T], List[float]):
+    def forward(self, x: T, freqs_x: List[float]) -> (List[T], List[float], List[int]):
         with tr.no_grad():
             assert x.ndim == 3
             assert x.size(1) == len(freqs_x)
             y_s = []
             freqs_t = []
-            for wavelet, freq_t in tqdm(zip(self.wavelet_bank, self.freqs_t)):
+            orientations = []
+            for wavelet, freq_t, orientation in zip(self.wavelet_bank, self.freqs_t, self.orientations):
                 # TODO(cm): check what condition is correct
                 band_freqs = [f_x for f_x in freqs_x if f_x >= 2 * freq_t]
                 n_bands = len(band_freqs)
@@ -137,8 +139,9 @@ class ScatTransform1DJagged(nn.Module):
                 y = y.squeeze(1)
                 y_s.append(y)
                 freqs_t.append(freq_t)
-            assert len(y_s) == len(freqs_t)
-            return y_s, freqs_t
+                orientations.append(orientation)
+            assert len(y_s) == len(freqs_t) == len(orientations)
+            return y_s, freqs_t, orientations
 
 
 # TODO(cm): add support for avg_win
@@ -162,29 +165,32 @@ class ScatTransform1DSubsampling(nn.Module):
         wavelet_banks = []
         avg_wins = []
         freqs_all = []
+        orientations_all = []
         for curr_j in range(J):
             if curr_j == J - 1:
                 include_lowest_octave = True
             else:
                 include_lowest_octave = False
             mw = MorletWavelet(sr_t=curr_sr)
-            wavelet_bank, _, freqs_t, _ = make_wavelet_bank(mw,
-                                                            n_octaves_t=1,
-                                                            steps_per_octave_t=Q,
-                                                            include_lowest_octave_t=include_lowest_octave,
-                                                            reflect_t=reflect_t)
+            wavelet_bank, _, freqs_t, orientations = make_wavelet_bank(mw,
+                                                                       n_octaves_t=1,
+                                                                       steps_per_octave_t=Q,
+                                                                       include_lowest_octave_t=include_lowest_octave,
+                                                                       reflect_t=reflect_t)
             wavelet_bank = nn.ParameterList(wavelet_bank)
             wavelet_banks.append(wavelet_bank)
             avg_wins.append(curr_avg_win)
             freqs_all.extend(freqs_t)
+            orientations_all.extend(orientations)
             curr_sr /= 2
             curr_avg_win //= 2
 
         self.wavelet_banks = nn.ParameterList(wavelet_banks)
         self.avg_wins = avg_wins
         self.freqs_t = freqs_all
+        self.orientations = orientations_all
 
-    def forward(self, x: T) -> (T, List[float]):
+    def forward(self, x: T) -> (T, List[float], List[int]):
         with tr.no_grad():
             octaves = []
             for wavelet_bank, avg_win in zip(self.wavelet_banks, self.avg_wins):
@@ -193,8 +199,8 @@ class ScatTransform1DSubsampling(nn.Module):
                 octaves.append(octave)
                 x = average_td(x, avg_win=2, hop_size=2)
             y = tr.cat(octaves, dim=1)
-            assert y.size(1) == len(self.freqs_t)
-            return y, self.freqs_t
+            assert y.size(1) == len(self.freqs_t) == len(self.orientations)
+            return y, self.freqs_t, self.orientations
 
 
 if __name__ == "__main__":
@@ -232,7 +238,7 @@ if __name__ == "__main__":
                                         highest_freq=highest_freq,
                                         squeeze_channels=True)
     log.info(f"in audio.shape = {audio.shape}")
-    scalogram, freqs = scat_transform_1d(audio)
+    scalogram, freqs, _ = scat_transform_1d(audio)
     log.info(f"Lowest freq = {freqs[-1]:.2f}")
 
     log.info(f"scalogram shape = {scalogram.shape}")
@@ -245,7 +251,7 @@ if __name__ == "__main__":
 
     scat_transform_1d_subsampling = ScatTransform1DSubsampling(sr, J_1, Q_1, squeeze_channels=True)
 
-    scalogram_fast, freqs_fast = scat_transform_1d_subsampling(audio)
+    scalogram_fast, freqs_fast, _ = scat_transform_1d_subsampling(audio)
     log.info(f"scalogram_fast shape = {scalogram_fast.shape}")
     log.info(f"scalogram_fast energy = {DiscreteWavelet.calc_energy(scalogram_fast)}")
     mean = tr.mean(scalogram_fast)
@@ -261,7 +267,7 @@ if __name__ == "__main__":
                                                      avg_win=avg_win,
                                                      highest_freq=highest_freq,
                                                      should_pad=True)
-    scalogram_jagged, freqs_jagged = scat_transform_1d_jagged(audio, [sr])
+    scalogram_jagged, freqs_jagged, _ = scat_transform_1d_jagged(audio, [sr])
     scalogram_jagged = tr.cat(scalogram_jagged, dim=1)
     log.info(f"scalogram_jagged shape = {scalogram_jagged.shape}")
     log.info(f"scalogram_jagged energy = {DiscreteWavelet.calc_energy(scalogram_jagged)}")
@@ -287,7 +293,7 @@ if __name__ == "__main__":
                                                      avg_win=avg_win,
                                                      highest_freq=highest_freq_t,
                                                      should_pad=True)
-    y_t, freqs_t = scat_transform_1d_jagged(scalogram, freqs)
+    y_t, freqs_t, _ = scat_transform_1d_jagged(scalogram, freqs)
     log.info(f"y_t len = {len(y_t)}")
     log.info(f"freqs_t = {freqs_t}")
     for y, freq in zip(y_t, freqs_t):

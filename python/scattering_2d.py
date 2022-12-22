@@ -117,6 +117,7 @@ class ScatTransform2D(nn.Module):
         return y
 
 
+# TODO(cm): implement ability to set highest frequency
 class ScatTransform2DSubsampling(nn.Module):
     def __init__(self,
                  sr: float,
