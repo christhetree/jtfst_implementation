@@ -9,10 +9,10 @@ from torch import Tensor as T, nn
 from tqdm import tqdm
 
 from filterbanks import make_wavelet_bank
-from scalogram_1d import plot_scalogram_1d
 from scattering_1d import _calc_scat_transform_1d, calc_scat_transform_1d_jagged, average_td
 from scattering_2d import calc_scat_transform_2d_fast
 from signals import make_pure_sine, make_pulse, make_exp_chirp
+from util import plot_scalogram
 from wavelets import MorletWavelet, DiscreteWavelet
 
 logging.basicConfig()
@@ -230,7 +230,7 @@ if __name__ == "__main__":
     mean = tr.mean(scalogram)
     std = tr.std(scalogram)
     scalogram_to_plot = tr.clip(scalogram, mean - (4 * std), mean + (4 * std))
-    plot_scalogram_1d(scalogram_to_plot[batch_idx], title="scalo", dt=None, freqs=st_1d.freqs_t, n_y_ticks=12)
+    plot_scalogram(scalogram_to_plot[batch_idx], title="scalo", dt=None, freqs=st_1d.freqs_t, n_y_ticks=12)
 
     pic_idx = -2
     log.info(f"jtfst shape = {jtfst.shape}")

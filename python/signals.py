@@ -1,7 +1,6 @@
 import logging
 import math
 import os
-from typing import Optional
 
 import torch as tr
 from torch import Tensor as T

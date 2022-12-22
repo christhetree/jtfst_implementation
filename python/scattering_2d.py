@@ -8,11 +8,11 @@ import torchaudio
 from matplotlib import pyplot as plt
 from torch import Tensor as T
 
+from dwt import dwt_2d, average_td
 from filterbanks import make_wavelet_bank
-from scalogram_1d import plot_scalogram_1d
-from scalogram_2d import calc_scalogram_2d
-from scattering_1d import calc_scat_transform_1d, average_td
+from scattering_1d import calc_scat_transform_1d
 from signals import make_pure_sine, make_pulse, make_exp_chirp
+from util import plot_scalogram
 from wavelets import MorletWavelet, DiscreteWavelet
 
 logging.basicConfig()
@@ -43,7 +43,7 @@ def calc_scat_transform_2d(x: T,
                                                                      highest_freq_f=highest_freq_f,
                                                                      reflect_f=True)
     freqs = list(zip(freqs_f, freqs_t, orientations))
-    y = calc_scalogram_2d(x, wavelet_bank, take_modulus=True)
+    y = dwt_2d(x, wavelet_bank, take_modulus=True)
 
     if not should_avg_f and not should_avg_t:
         return y, freqs, wavelet_bank
@@ -121,7 +121,7 @@ def calc_scat_transform_2d_fast(x: T,
             reflect_f=True
         )
         freqs = list(zip(freqs_f, freqs_t, orientations))
-        octave = calc_scalogram_2d(curr_x, wavelet_bank, take_modulus=True)
+        octave = dwt_2d(curr_x, wavelet_bank, take_modulus=True)
         octave = average_td(octave, curr_avg_win_t, dim=-1)
         if should_avg_f:
             octave = average_td(octave, avg_win_f, dim=-2)
@@ -174,7 +174,7 @@ if __name__ == "__main__":
     mean = tr.mean(scalogram)
     std = tr.std(scalogram)
     scalogram_to_plot = tr.clip(scalogram, mean - (4 * std), mean + (4 * std))
-    plot_scalogram_1d(scalogram_to_plot[0], title="scalo", dt=None, freqs=freqs_t, n_y_ticks=J_1)
+    plot_scalogram(scalogram_to_plot[0], title="scalo", dt=None, freqs=freqs_t, n_y_ticks=J_1)
     # exit()
 
     J_2_f = 4
