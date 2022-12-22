@@ -12,7 +12,7 @@ from scalogram_1d import plot_scalogram_1d
 from scattering_1d import calc_scat_transform_1d, calc_scat_transform_1d_jagged, average_td
 from scattering_2d import calc_scat_transform_2d_fast
 from signals import make_pure_sine, make_pulse, make_exp_chirp
-from wavelets import MorletWavelet
+from wavelets import DiscreteWavelet
 
 logging.basicConfig()
 log = logging.getLogger(__name__)
@@ -167,7 +167,7 @@ if __name__ == "__main__":
 
     pic_idx = -2
     log.info(f"jtfst shape = {jtfst.shape}")
-    log.info(f"jtfst energy = {MorletWavelet.calc_energy(jtfst)}")
+    log.info(f"jtfst energy = {DiscreteWavelet.calc_energy(jtfst)}")
     mean = tr.mean(jtfst)
     std = tr.std(jtfst)
     jtfst = tr.clip(jtfst, mean - (4 * std), mean + (4 * std))

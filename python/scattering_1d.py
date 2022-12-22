@@ -12,7 +12,7 @@ from tqdm import tqdm
 from filterbanks import make_wavelet_bank
 from scalogram_1d import calc_scalogram_1d, plot_scalogram_1d
 from signals import make_pure_sine, make_pulse, make_exp_chirp
-from wavelets import MorletWavelet
+from wavelets import MorletWavelet, DiscreteWavelet
 
 logging.basicConfig()
 log = logging.getLogger(__name__)
@@ -70,8 +70,7 @@ def calc_scat_transform_1d(x: T,
                            squeeze_channels: bool = True,
                            reflect_t: bool = False) -> (T, List[float], List[T]):
     assert x.ndim == 3
-    w = MorletWavelet.freq_to_w_at_s(1.0, s=1.0)
-    mw = MorletWavelet(w=w, sr_t=sr)
+    mw = MorletWavelet(sr_t=sr)
     wavelet_bank, _, freqs_t, _ = make_wavelet_bank(mw, J, Q, highest_freq, reflect_t=reflect_t)
     y = _calc_scat_transform_1d(x, sr, wavelet_bank, freqs_t, should_avg, avg_win, squeeze_channels)
     return y, freqs_t, wavelet_bank
@@ -82,7 +81,6 @@ def calc_scat_transform_1d_fast(x: T,
                                 J: int,
                                 Q: int = 1) -> (T, List[float]):
     assert x.ndim == 3
-    w = MorletWavelet.freq_to_w_at_s(1.0, s=1.0)
     curr_x = x
     curr_sr = sr
     curr_avg_win = 2 ** (J + 1)
@@ -94,7 +92,7 @@ def calc_scat_transform_1d_fast(x: T,
         else:
             include_lowest_octave = False
 
-        mw = MorletWavelet(w=w, sr_t=curr_sr)
+        mw = MorletWavelet(sr_t=curr_sr)
         wavelet_bank, _, freqs_t, _ = make_wavelet_bank(mw,
                                                         n_octaves_t=1,
                                                         steps_per_octave_t=Q,
@@ -121,8 +119,7 @@ def calc_scat_transform_1d_jagged(x: T,
                                   should_pad: bool = False) -> (T, List[float]):
     assert x.ndim == 3
     assert x.size(1) == len(freqs_x)
-    w = MorletWavelet.freq_to_w_at_s(1.0, s=1.0)
-    mw = MorletWavelet(w=w, sr_t=sr)
+    mw = MorletWavelet(sr_t=sr)
     wavelet_bank, _, freqs_t, _ = make_wavelet_bank(mw, J, Q, highest_freq)
     y_s = []
     freqs_out = []
@@ -184,7 +181,7 @@ if __name__ == "__main__":
     # log.info(f"scalogram std = {tr.std(scalogram)}")
     # log.info(f"scalogram max = {tr.max(scalogram)}")
     # log.info(f"scalogram min = {tr.min(scalogram)}")
-    log.info(f"scalogram energy = {MorletWavelet.calc_energy(scalogram)}")
+    log.info(f"scalogram energy = {DiscreteWavelet.calc_energy(scalogram)}")
     mean = tr.mean(scalogram)
     std = tr.std(scalogram)
     scalogram_to_plot = tr.clip(scalogram, mean - (4 * std), mean + (4 * std))
@@ -196,7 +193,7 @@ if __name__ == "__main__":
     # # log.info(f"scalogram_fast std = {tr.std(scalogram_fast)}")
     # # log.info(f"scalogram_fast max = {tr.max(scalogram_fast)}")
     # # log.info(f"scalogram_fast min = {tr.min(scalogram_fast)}")
-    # log.info(f"scalogram_fast energy = {MorletWavelet.calc_energy(scalogram_fast)}")
+    # log.info(f"scalogram_fast energy = {DiscreteWavelet.calc_energy(scalogram_fast)}")
     # plot_scalogram_1d(scalogram_fast[0], title="scalo fast", dt=None, freqs_t=freqs_fast)
     # exit()
 

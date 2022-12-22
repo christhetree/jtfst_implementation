@@ -13,7 +13,7 @@ from scalogram_1d import plot_scalogram_1d
 from scattering_1d import _calc_scat_transform_1d, calc_scat_transform_1d_jagged, average_td
 from scattering_2d import calc_scat_transform_2d_fast
 from signals import make_pure_sine, make_pulse, make_exp_chirp
-from wavelets import MorletWavelet
+from wavelets import MorletWavelet, DiscreteWavelet
 
 logging.basicConfig()
 log = logging.getLogger(__name__)
@@ -56,8 +56,7 @@ class ScatTransform1D(nn.Module):
         self.squeeze_channels = squeeze_channels
         self.reflect_t = reflect_t
 
-        w = MorletWavelet.freq_to_w_at_s(1.0, s=1.0)
-        mw = MorletWavelet(w=w, sr_t=sr)
+        mw = MorletWavelet(sr_t=sr)
         wavelet_bank, _, freqs_t, _ = make_wavelet_bank(mw, J, Q, highest_freq, reflect_t=reflect_t)
         self.wavelet_bank = nn.ParameterList(wavelet_bank)
         self.freqs_t = freqs_t
@@ -227,7 +226,7 @@ if __name__ == "__main__":
 
     batch_idx = 0
     log.info(f"scalogram shape = {scalogram.shape}")
-    log.info(f"scalogram energy = {MorletWavelet.calc_energy(scalogram)}")
+    log.info(f"scalogram energy = {DiscreteWavelet.calc_energy(scalogram)}")
     mean = tr.mean(scalogram)
     std = tr.std(scalogram)
     scalogram_to_plot = tr.clip(scalogram, mean - (4 * std), mean + (4 * std))
@@ -235,7 +234,7 @@ if __name__ == "__main__":
 
     pic_idx = -2
     log.info(f"jtfst shape = {jtfst.shape}")
-    log.info(f"jtfst energy = {MorletWavelet.calc_energy(jtfst)}")
+    log.info(f"jtfst energy = {DiscreteWavelet.calc_energy(jtfst)}")
     mean = tr.mean(jtfst)
     std = tr.std(jtfst)
     jtfst = tr.clip(jtfst, mean - (4 * std), mean + (4 * std))
