@@ -8,12 +8,10 @@ from matplotlib import pyplot as plt
 from torch import Tensor as T, nn
 from tqdm import tqdm
 
-from filterbanks import make_wavelet_bank
-from scattering_1d import _calc_scat_transform_1d, calc_scat_transform_1d_jagged, average_td
 from scattering_2d import calc_scat_transform_2d_fast
 from signals import make_pure_sine, make_pulse, make_exp_chirp
 from util import plot_scalogram
-from wavelets import MorletWavelet, DiscreteWavelet
+from wavelets import DiscreteWavelet
 
 logging.basicConfig()
 log = logging.getLogger(__name__)
@@ -34,38 +32,6 @@ else:
     device = tr.device("cpu")
 
 log.info(f"device = {device}")
-
-
-class ScatTransform1D(nn.Module):
-    def __init__(self,
-                 sr: float,
-                 J: int = 12,
-                 Q: int = 16,
-                 should_avg: bool = False,
-                 highest_freq: Optional[float] = None,
-                 avg_win: Optional[int] = None,
-                 squeeze_channels: bool = True,
-                 reflect_t: bool = False) -> None:
-        super().__init__()
-        self.sr = sr
-        self.J = J
-        self.Q = Q
-        self.should_avg = should_avg
-        self.highest_freq = highest_freq
-        self.avg_win = avg_win
-        self.squeeze_channels = squeeze_channels
-        self.reflect_t = reflect_t
-
-        mw = MorletWavelet(sr_t=sr)
-        wavelet_bank, _, freqs_t, _ = make_wavelet_bank(mw, J, Q, highest_freq, reflect_t=reflect_t)
-        self.wavelet_bank = nn.ParameterList(wavelet_bank)
-        self.freqs_t = freqs_t
-
-    def forward(self, x: T) -> T:
-        with tr.no_grad():
-            y = _calc_scat_transform_1d(
-                x, self.sr, self.wavelet_bank, self.freqs_t, self.should_avg, self.avg_win, self.squeeze_channels)
-            return y
 
 
 class JTFST1D(nn.Module):
