@@ -117,4 +117,5 @@ def plot_3d_tensor(data: T,
                          remove_outliers=remove_outliers,
                          interpolation=interpolation,
                          cmap=cmap)
+    fig.tight_layout()
     plt.show()
