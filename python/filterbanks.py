@@ -1,3 +1,7 @@
+"""
+Methods for creating discrete wavelet filterbanks.
+"""
+
 import logging
 import os
 from typing import Optional, List
@@ -17,12 +21,25 @@ def calc_scales_and_freqs(n_octaves: int,
                           dw: DiscreteWavelet,
                           highest_freq: Optional[float] = None,
                           include_lowest_octave: bool = True) -> (List[float], List[float]):
+    """
+    Calculates the scales and corresponding frequencies for a wavelet filterbank.
+
+    Args:
+        :param n_octaves: How many octaves to include in the filterbank.
+        :param steps_per_octave: How many steps per octave to include in the filterbank.
+        :param sr: Sampling rate of the wavelets in the filterbank.
+        :param dw: Discrete wavelet class to use for the filterbank.
+        :param highest_freq: Starting frequency of the filterbank. If omitted, defaults to the Nyquist frequency.
+        :param include_lowest_octave: For completeness, include the lowest octave or not
+                                      (e.g. if true, results in (n_octaves * steps_per_octave) + 1 number of filters).
+    """
     assert n_octaves >= 1
     assert steps_per_octave >= 1
 
     if highest_freq is None:
-        smallest_period = 2.0 / sr
+        smallest_period = 2.0 / sr  # Default to Nyquist
     else:
+        # Ensure highest frequency is not higher than Nyquist
         smallest_period = 1.0 / highest_freq
         assert smallest_period * sr >= 2.0
 
@@ -59,6 +76,31 @@ def make_wavelet_bank(dw: DiscreteWavelet,
                       include_lowest_octave_f: bool = True,
                       reflect_f: bool = True,
                       normalize: bool = True) -> (List[T], List[float], List[float], List[int]):
+    """
+    Creates a 1D or 2D wavelet filterbank along with each wavelet's corresponding frequency axis frequency, time axis
+    frequency, and orientation (if 1D for the time axis and if 2D for the frequency axis).
+
+    For easier to read notation and consistency with scalograms and convolution outputs, we always define the last
+    dimension (dim=-1) as the time dimension "t" and the second last dimension (dim=-2) as the frequency dimension "f".
+
+    We consider 1D wavelet filterbanks as operating on the time axis and 2D wavelet filterbanks as operating on both.
+
+    Args:
+        :param dw: Discrete wavelet class to use for the filterbank.
+        :param n_octaves_t: How many octaves to include in the filterbank for the time axis.
+        :param steps_per_octave_t: How many steps per octave to include in the filterbank for the time axis.
+        :param highest_freq_t: Starting frequency of the filterbank for the time axis. If omitted, defaults to the
+                               Nyquist frequency.
+        :param include_lowest_octave_t: For completeness, includes the lowest octave or not for the time axis.
+        :param reflect_t: Reflects each wavelet along the time axis (results in twice as many filters).
+        :param n_octaves_f: How many octaves to include in the filterbank for the frequency axis.
+        :param steps_per_octave_f: How many octaves to include in the filterbank for the frequency axis.
+        :param highest_freq_f: Starting frequency of the filterbank for the frequency axis. If omitted, defaults to the
+                               Nyquist frequency.
+        :param include_lowest_octave_f: For completeness, includes the lowest octave or not for the frequency axis.
+        :param reflect_f: Reflects each wavelet along the frequency axis (results in twice as many filters).
+        :param normalize: Normalizes the wavelets to unit energy.
+    """
     if n_octaves_f is not None:
         scales_f, freqs_f = calc_scales_and_freqs(
             n_octaves_f, steps_per_octave_f, dw.sr_f, dw, highest_freq_f, include_lowest_octave_f)
