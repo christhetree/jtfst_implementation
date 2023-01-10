@@ -10,6 +10,7 @@ from sklearn.model_selection import GridSearchCV
 from sklearn.metrics import classification_report
 from sklearn.metrics import confusion_matrix
 import torch
+from thundersvm import SVC  # use GPU for SVM
 from tqdm import tqdm
 
 logging.basicConfig()
@@ -24,25 +25,6 @@ param_grid = {
 }  # para_grid used
 scoring = "f1_macro"
 cv = 3
-
-
-def load_svm(gpu_id):
-    try:
-        from thundersvm import SVC
-    except (ImportError, FileNotFoundError) as e:
-        log.error(f"thundersvm error: {e}")
-        if gpu_id is not None:
-            log.error("thundersvm error and gpu_id is not None")
-            sys.exit(1)
-        else:
-            from sklearn.svm import SVC
-
-            log.info("Using sklearn.svm.SVC")
-            return SVC
-
-    log.info("Using thundersvm.SVC")
-    return SVC
-
 
 def get_outfile_name(input):
     # get output file name
@@ -100,7 +82,7 @@ def test_train_split(dataset):
     return train_split, test_split
 
 
-def run(dataset, train_split, test_split, results_file, SVC, gpu_id):
+def run(dataset, train_split, test_split, results_file, gpu_id):
     num_splits = len(train_split)
 
     # Load labels
@@ -134,13 +116,9 @@ def run(dataset, train_split, test_split, results_file, SVC, gpu_id):
         test_features = stdscaler.transform(test_features)
         log.info(f"Train: {train_features.shape}, Test: {test_features.shape}")
 
-        svc = (
-            SVC(kernel=kernel, gpu_id=gpu_id)
-            if gpu_id is not None
-            else SVC(kernel=kernel)
-        )
+        svc = SVC(kernel=kernel, gpu_id=gpu_id)
         clf = GridSearchCV(svc, param_grid=param_grid, cv=cv, scoring=scoring)
-        clf = clf.fit(train_features[:1000], train_labels[:1000])
+        clf = clf.fit(train_features, train_labels)
         label_pred = clf.predict(test_features)
 
         print("Result of split %d :" % split)
@@ -173,11 +151,9 @@ def main(arguments):
     output_filename = get_outfile_name(args.input)
 
     # Attempt to load thundersvm
-    SVC = load_svm(args.gpu)
-
     dataset = load_dataset(args.input)
     train_split, test_split = test_train_split(dataset)
-    run(dataset, train_split, test_split, output_filename, SVC, args.gpu)
+    run(dataset, train_split, test_split, output_filename, args.gpu)
 
 
 if __name__ == "__main__":
