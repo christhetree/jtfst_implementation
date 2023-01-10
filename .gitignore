@@ -237,7 +237,7 @@ cython_debug/
 .DS_Store
 .idea/
 
-# Dataset
+# Datasets
 CBFdataset/
 CBFdataset_PETS/
 
