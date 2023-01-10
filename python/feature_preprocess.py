@@ -155,16 +155,51 @@ def get_feature_labels(
             )
 
             # Set labels during PET to 1
+            prev_start = 0
+            prev_end = 0
+            overlapping_events = 0
             for n in range(len(file_onoff) // 2):
                 start_idx = int(file_onoff[2 * n] * samplerate / hop_size)
                 end_idx = int(file_onoff[2 * n + 1] * samplerate / hop_size)
 
+                # Handle an edge case where the end index is the same or less than the start index
+                end_idx = end_idx if end_idx > start_idx else start_idx + 1
+
+                # Make sure the start and end indices are within the number of frames
+                assert start_idx < len(
+                    x
+                ), f"Start index {start_idx} is larger than the number of frames {len(x)} in {a}"
+                assert end_idx < len(
+                    x
+                ), f"End index {end_idx} is larger than the number of frames {len(x)} in {a}"
+
+                # Check for repeated events
+                if start_idx == prev_start and end_idx == prev_end:
+                    log.info(f"Repeated event in {a}")
+                    continue
+
+                # Set label to 1 for all frames during PET
                 x[start_idx:end_idx] = 1
 
+                # Check for overlapping events
+                if start_idx <= prev_end:
+                    log.info(f"Overlapping events in {a}")
+                    overlapping_events += 1
+
+                prev_start = start_idx
+                prev_end = end_idx
+
             # Make sure enough events are present -- the number of
-            # changes in the label vector (i.e. event on: 0->1 or event off: 1->0)
-            # should be equal to the number of events in the annotation file
-            assert len(file_onoff) == np.sum(np.abs(np.diff(x)))
+            # changes in the label vector (i.e. event on: 0->1)
+            # should be equal to half the number of events in the annotation file
+            # minus the number of overlapping events
+            expected_events = (len(file_onoff) // 2) - overlapping_events
+            found_events = len(np.where(np.diff(np.pad(x, (1, 1))) == 1)[0])
+            if expected_events != found_events:
+                print(x)
+            assert (
+                expected_events == found_events
+            ), f"Found {expected_events} events in {a} but {found_events} in the label vector"
 
         labels.append(x)
 

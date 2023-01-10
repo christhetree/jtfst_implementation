@@ -21,9 +21,11 @@
 
     ```
     cd matlab
+
     matlab -r dJTFS_acciacatura --nodisplay --nodesktop
     matlab -r dJTFS_portamento --nodisplay --nodesktop
     matlab -r dJTFS_glissando --nodisplay --nodesktop
+
     cd ..
     ```
 
