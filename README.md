@@ -38,3 +38,17 @@
     python python/feature_preprocess.py matlab/dJTFS_portamento.mat file_names.txt portamento
     python python/feature_preprocess.py matlab/dJTFS_glissando.mat file_names.txt glissando
     ```
+
+    All processed features will be saved in `.npz` files in a directory called `features`.
+
+5. Run binary classification 
+
+    ```
+    python python/svm_classifier.py features/acciacatura.npz
+    python python/svm_classifier.py features/portamento.npz
+    python python/svm_classifier.py features/glissando.npz
+    ```
+
+    Optionally run using a GPU by adding the flag: `--gpu 0` where 0 should be replaced with the desired gpu id.
+
+    All results are stored in `.npz` files in a directory called `results`.
