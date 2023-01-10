@@ -241,5 +241,10 @@ cython_debug/
 CBFdataset/
 CBFdataset_PETS/
 
+# Output from python scripts
+features/
+results/
+file_names.txt
+
 # Matlab matrices
 *.mat
