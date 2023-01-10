@@ -10,10 +10,10 @@
 2. Filter the dataset to remove non pitch evolution-based playing techniques. We are only looking at acciacatura, glissando, and portamento. In order to run on consumer compute we also segment all audio files and annotations to less thatn 60s.
 
     ```
-    python python/data_preprocess.py
+    python python/dataset_preprocess.py
     ```
 
-    Saves filtered and segmented dataset to `CBFdataset_PETS`
+    Saves filtered and segmented dataset to `CBFdataset_PETS`. Additionally, a text file called `file_names.txt` will be saved and used in subsequent steps to keep track of the order that audio files are processed.
 
 3. Compute the joint time-frequency scattering transform on all audio files in the dataset.
 
