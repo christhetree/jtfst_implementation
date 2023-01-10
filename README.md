@@ -21,7 +21,20 @@
 
     ```
     cd matlab
+
     matlab -r dJTFS_acciacatura --nodisplay --nodesktop
     matlab -r dJTFS_portamento --nodisplay --nodesktop
     matlab -r dJTFS_glissando --nodisplay --nodesktop
+
+    cd ..
+    ```
+
+    This will output `.mat` files for each technique. Defaults to outputting in the matlab directory with output like: `dJTFS_<technique>.mat`
+
+4. Preprocess the extracted features prior to classification.
+
+    ```
+    python python/feature_preprocess.py matlab/dJTFS_acciacatura.mat file_names.txt acciacatura
+    python python/feature_preprocess.py matlab/dJTFS_portamento.mat file_names.txt portamento
+    python python/feature_preprocess.py matlab/dJTFS_glissando.mat file_names.txt glissando
     ```
