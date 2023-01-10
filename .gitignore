@@ -248,3 +248,6 @@ file_names.txt
 
 # Matlab matrices
 *.mat
+
+scratch.py
+tmp.pt
