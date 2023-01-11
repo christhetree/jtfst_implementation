@@ -80,7 +80,7 @@ fabric.properties
 [Ll]ib
 [Ll]ib64
 [Ll]ocal
-[Ss]cripts
+#[Ss]cripts
 pyvenv.cfg
 .venv
 pip-selfcheck.json
@@ -236,6 +236,18 @@ cython_debug/
 
 .DS_Store
 .idea/
+
+# Datasets
+CBFdataset/
+CBFdataset_PETS/
+
+# Output from python scripts
+features/
+results/
+file_names.txt
+
+# Matlab matrices
+*.mat
 
 scratch.py
 tmp.pt
