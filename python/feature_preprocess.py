@@ -12,6 +12,7 @@ from pathlib import Path
 import sys
 from typing import List
 
+import pickle
 import numpy as np
 import pandas as pd
 import scipy.io
@@ -32,6 +33,11 @@ def load_features(input_file: Path):
     log.info(f"Loading features from {input_file}")
     if input_file.suffix == ".mat":
         features = scipy.io.loadmat(input_file)["fileFeatures"][0, :]
+
+    elif input_file.suffix == ".pkl":
+        with open(input_file, "rb") as fp:
+            features = pickle.load(fp)
+
     else:
         # TODO: Add support for npy files?
         raise ValueError(f"Unknown file type: {input_file}")
@@ -245,6 +251,7 @@ def main(arguments):
         "--oversampling",
         default=2,
         help="Oversampling factor for dJTFST",
+        type=int
     )
 
     args = parser.parse_args(arguments)
