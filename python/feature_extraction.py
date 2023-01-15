@@ -180,6 +180,7 @@ def main(arguments):
         args.outname = Path("features") / f"jtfst_{args.techname.lower()}.pkl"
 
     # Create the output directory if it doesn't exist
+    args.outname = Path(args.outname)
     if not args.outname.parent.exists():
         Path(args.outname.parent).mkdir(parents=True)
 
