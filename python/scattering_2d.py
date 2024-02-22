@@ -55,17 +55,17 @@ class ScatTransform2D(nn.Module):
         self.freqs = list(zip(freqs_f, freqs_t, orientations))
 
     def forward(self, x: T) -> (T, List[Tuple[float, float, int]]):
-        with tr.no_grad():
-            y = ScatTransform2D.calc_scat_transform_2d(x,
-                                                       self.sr,
-                                                       self.wavelet_bank,
-                                                       self.freqs,
-                                                       self.should_avg_f,
-                                                       self.should_avg_t,
-                                                       self.avg_win_f,
-                                                       self.avg_win_t)
-            assert y.size(1) == len(self.freqs)
-            return y, self.freqs
+        # with tr.no_grad():
+        y = ScatTransform2D.calc_scat_transform_2d(x,
+                                                   self.sr,
+                                                   self.wavelet_bank,
+                                                   self.freqs,
+                                                   self.should_avg_f,
+                                                   self.should_avg_t,
+                                                   self.avg_win_f,
+                                                   self.avg_win_t)
+        assert y.size(1) == len(self.freqs)
+        return y, self.freqs
 
     @staticmethod
     def calc_scat_transform_2d(x: T,
@@ -190,16 +190,16 @@ class ScatTransform2DSubsampling(nn.Module):
         self.freqs = freqs_all
 
     def forward(self, x: T) -> (T, List[Tuple[float, float, int]]):
-        with tr.no_grad():
-            octaves = []
-            for wavelet_bank, avg_win_t in zip(self.wavelet_banks, self.avg_wins_t):
-                octave = dwt_2d(x, wavelet_bank, take_modulus=True)
-                octave = average_td(octave, avg_win_t, dim=-1)
-                if self.should_avg_f:
-                    octave = average_td(octave, self.avg_win_f, dim=-2)
-                octaves.append(octave)
-                if avg_win_t > 1:
-                    x = average_td(x, avg_win=2, dim=-1)
-            y = tr.cat(octaves, dim=1)
-            assert y.size(1) == len(self.freqs)
-            return y, self.freqs
+        # with tr.no_grad():
+        octaves = []
+        for wavelet_bank, avg_win_t in zip(self.wavelet_banks, self.avg_wins_t):
+            octave = dwt_2d(x, wavelet_bank, take_modulus=True)
+            octave = average_td(octave, avg_win_t, dim=-1)
+            if self.should_avg_f:
+                octave = average_td(octave, self.avg_win_f, dim=-2)
+            octaves.append(octave)
+            if avg_win_t > 1:
+                x = average_td(x, avg_win=2, dim=-1)
+        y = tr.cat(octaves, dim=1)
+        assert y.size(1) == len(self.freqs)
+        return y, self.freqs
