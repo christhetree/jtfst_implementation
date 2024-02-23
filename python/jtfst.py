@@ -30,10 +30,19 @@ class JTFST1D(nn.Module):
                  avg_win_t: Optional[int] = None,
                  reflect_f: bool = False) -> None:
         super().__init__()
+        self.sr = sr
+        self.J_1 = J_1
+        self.J_2_f = J_2_f
+        self.J_2_t = J_2_t
+        self.Q_1 = Q_1
+        self.Q_2_f = Q_2_f
+        self.Q_2_t = Q_2_t
         self.should_avg_f = should_avg_f
         self.should_avg_t = should_avg_t
         self.avg_win_f = avg_win_f
         self.avg_win_t = avg_win_t
+        self.reflect_f = reflect_f
+
         self.audio_to_scalogram = ScatTransform1D(sr, J_1, Q_1, should_avg=False, squeeze_channels=True)
         self.conv_t = ScatTransform1DJagged(sr, J_2_t, Q_2_t, should_avg=False, should_pad=True)
         self.conv_f = ScatTransform1D(sr,
@@ -87,10 +96,19 @@ class JTFST2D(nn.Module):
                  avg_win_t: Optional[int] = None,
                  reflect_f: bool = True) -> None:
         super().__init__()
+        self.sr = sr
+        self.J_1 = J_1
+        self.J_2_f = J_2_f
+        self.J_2_t = J_2_t
+        self.Q_1 = Q_1
+        self.Q_2_f = Q_2_f
+        self.Q_2_t = Q_2_t
         self.should_avg_f = should_avg_f
         self.should_avg_t = should_avg_t
         self.avg_win_f = avg_win_f
         self.avg_win_t = avg_win_t
+        self.reflect_f = reflect_f
+
         self.audio_to_scalogram = ScatTransform1D(sr, J_1, Q_1, should_avg=False, squeeze_channels=True)
         self.scalogram_to_jtfst = ScatTransform2DSubsampling(sr,
                                                              J_2_f,
