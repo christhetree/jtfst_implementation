@@ -173,6 +173,11 @@ class MorletWavelet(DiscreteWavelet):
     def period_to_scale(self, period: float) -> float:
         return period * (self.w + ((2.0 + (self.w ** 2)) ** 0.5)) / (4 * tr.pi)
 
+    def n_to_scale(self, n: int) -> float:
+        M = (n - 1) / 2
+        s = (M * self.dt) / self.n_sig
+        return s
+
     def make_t_from_scale(self, s: float, dt: float) -> T:
         M = int((self.n_sig * s) / dt)
         t = tr.arange(-M, M + 1) * dt
